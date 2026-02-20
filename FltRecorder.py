@@ -5,9 +5,8 @@ from plotly.subplots import make_subplots
 import comtrade as ct
 import re
 
-st.set_page_config(page_title="COMTRADE Viewer", layout="wide")
-
-st.title("⚡ COMTRADE Fault Record Viewer")
+st.set_page_config(page_title="COMTRADE Analyzer", layout="wide")
+st.title("⚡ COMTRADE Fault Record Analyzer")
 
 cfg_file = st.file_uploader("Upload CFG file", type=["cfg"])
 dat_file = st.file_uploader("Upload DAT file", type=["dat"])
@@ -25,20 +24,17 @@ if cfg_file and dat_file:
 
     time = np.array(rec.time)
 
-    # -------------------------
-    # HEADER INFORMATION
-    # -------------------------
+    # --------------------------------------------------
+    # PROPER METADATA EXTRACTION
+    # --------------------------------------------------
 
-    substation = getattr(rec, "station_name", "Unknown")
-    feeder = getattr(rec, "rec_dev_id", "Unknown")
-    relay = getattr(rec, "device_id", "Unknown")
+    substation = getattr(rec, "station_name", "Not Available")
+    recorder = getattr(rec, "rec_dev_id", "Not Available")
 
     st.markdown("### 📋 Record Information")
-    st.info(f"""
-    **Substation:** {substation}  
-    **Feeder:** {feeder}  
-    **Relay:** {relay}
-    """)
+    st.write(f"**Substation:** {substation}")
+    st.write(f"**Recorder ID:** {recorder}")
+    st.write(f"**System Frequency:** {getattr(rec, 'frequency', 'NA')} Hz")
 
     analog_names = rec.analog_channel_ids
     analog_data = np.array(rec.analog)
@@ -46,30 +42,53 @@ if cfg_file and dat_file:
     if analog_data.shape[0] != len(analog_names):
         analog_data = analog_data.T
 
-    # -------------------------
-    # SELECT 4U & 4I
-    # -------------------------
+    # --------------------------------------------------
+    # SELECT PHASE VOLTAGES & CURRENTS
+    # --------------------------------------------------
 
-    voltage_channels = []
-    current_channels = []
+    voltage_channels = [n for n in analog_names if re.search(r'V[A-CN]|U[A-CN]', n.upper())][:4]
+    current_channels = [n for n in analog_names if re.search(r'I[A-CN]', n.upper())][:4]
 
-    for name in analog_names:
-        name_upper = name.upper()
+    # --------------------------------------------------
+    # FAULT DETECTION USING RMS DEVIATION
+    # --------------------------------------------------
 
-        if re.search(r'\b(V|U)[A-Z]?\b', name_upper):
-            voltage_channels.append(name)
+    fault_start = None
+    fault_end = None
 
-        elif re.search(r'\bI[A-Z]?\b', name_upper):
-            current_channels.append(name)
+    if current_channels:
 
-    voltage_channels = voltage_channels[:4]
-    current_channels = current_channels[:4]
+        idx_list = [analog_names.index(n) for n in current_channels]
+        current_matrix = analog_data[idx_list]
 
-    # -------------------------
+        # Sliding RMS window
+        window = int(0.02 / (time[1] - time[0]))  # 20ms window
+
+        rms_values = []
+        for i in range(len(time) - window):
+            segment = current_matrix[:, i:i+window]
+            rms = np.sqrt(np.mean(segment**2))
+            rms_values.append(rms)
+
+        rms_values = np.array(rms_values)
+
+        baseline = np.mean(rms_values[:window])
+        threshold = baseline * 1.5
+
+        active = np.where(rms_values > threshold)[0]
+
+        if len(active) > 0:
+            fault_start = time[active[0]]
+            fault_end = time[active[-1]]
+            fault_duration = fault_end - fault_start
+
+            st.success(f"🔴 Fault Start: {fault_start:.6f} s")
+            st.success(f"🔵 Fault End: {fault_end:.6f} s")
+            st.success(f"⏱ Fault Duration: {fault_duration:.6f} s")
+
+    # --------------------------------------------------
     # ANALOG PLOT
-    # -------------------------
-
-    st.subheader("Analog Channels")
+    # --------------------------------------------------
 
     fig = make_subplots(
         rows=2,
@@ -82,61 +101,44 @@ if cfg_file and dat_file:
     for name in voltage_channels:
         idx = analog_names.index(name)
         fig.add_trace(
-            go.Scatter(
-                x=time,
-                y=analog_data[idx],
-                mode="lines",
-                name=name,
-                legendgroup="Voltages"
-            ),
-            row=1,
-            col=1
+            go.Scatter(x=time, y=analog_data[idx], name=name),
+            row=1, col=1
         )
 
     # Currents
     for name in current_channels:
         idx = analog_names.index(name)
         fig.add_trace(
-            go.Scatter(
-                x=time,
-                y=analog_data[idx],
-                mode="lines",
-                name=name,
-                legendgroup="Currents"
-            ),
-            row=2,
-            col=1
+            go.Scatter(x=time, y=analog_data[idx], name=name),
+            row=2, col=1
         )
 
-    # -------------------------
-    # Fault Detection (Amplitude Based)
-    # -------------------------
+    # Mark fault window
+    if fault_start and fault_end:
+        fig.add_vrect(
+            x0=fault_start,
+            x1=fault_end,
+            fillcolor="red",
+            opacity=0.15,
+            line_width=0
+        )
 
-    amplitude = np.max(np.abs(analog_data), axis=0)
-    threshold = 0.15 * np.max(amplitude)
+    fig.update_layout(
+        height=750,
+        legend=dict(
+            orientation="v",
+            x=1.02,
+            y=1
+        )
+    )
 
-    active_indices = np.where(amplitude >= threshold)[0]
-
-    if len(active_indices) > 0:
-        fault_start = time[active_indices[0]]
-        fault_end = time[active_indices[-1]]
-        fault_duration = fault_end - fault_start
-
-        fig.add_vline(x=fault_start, line_color="red", line_dash="dash")
-        fig.add_vline(x=fault_end, line_color="green", line_dash="dash")
-
-        st.success(f"🔴 Fault Start: {fault_start:.6f} s")
-        st.success(f"🔵 Fault End: {fault_end:.6f} s")
-        st.success(f"⏱ Fault Duration: {fault_duration:.6f} s")
-
-    fig.update_layout(height=700)
     fig.update_xaxes(title_text="Time (s)", row=2, col=1)
 
     st.plotly_chart(fig, use_container_width=True)
 
-    # -------------------------
-    # DIGITAL (Changed Only)
-    # -------------------------
+    # --------------------------------------------------
+    # DIGITAL CHANNELS (CHANGED ONLY)
+    # --------------------------------------------------
 
     status_raw = rec.status
     status_names = rec.status_channel_ids
@@ -163,7 +165,7 @@ if cfg_file and dat_file:
                 rows=len(changed),
                 cols=1,
                 shared_xaxes=True,
-                vertical_spacing=0.02
+                vertical_spacing=0.01
             )
 
             for i, (name, sig) in enumerate(changed):
@@ -173,7 +175,7 @@ if cfg_file and dat_file:
                         y=sig,
                         mode="lines",
                         name=name,
-                        line=dict(shape="hv", width=1.5)
+                        line=dict(shape="hv")
                     ),
                     row=i+1,
                     col=1
@@ -185,18 +187,9 @@ if cfg_file and dat_file:
                     col=1
                 )
 
-            fig_d.update_layout(
-                height=200 + 100 * len(changed),
-                showlegend=True
-            )
+            fig_d.update_layout(height=250 + 90*len(changed))
 
             st.plotly_chart(fig_d, use_container_width=True)
-
-        else:
-            st.info("No digital signals changed state.")
-
-    else:
-        st.warning("No digital channels available.")
 
 else:
     st.info("Upload matching CFG and DAT files to begin.")
