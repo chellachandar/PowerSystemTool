@@ -1,119 +1,124 @@
-import streamlit as st
-import pandas as pd
 import math
+import pandas as pd
 
-st.set_page_config(page_title="Transformer REF Optimizer", layout="wide")
+class REF_ESI_Optimizer:
 
-st.title("⚡ Transformer High Impedance REF Design Optimizer")
+    def __init__(
+        self,
+        mva,
+        hv_kv,
+        bus_fault_ka,
+        ct_ratios,
+        rct,
+        rlead,
+        relay_va,
+        ir,
+        existing_vk=None
+    ):
 
-# =============================
-# INPUT SECTION
-# =============================
+        self.mva = mva
+        self.hv_kv = hv_kv
+        self.bus_fault_ka = bus_fault_ka
+        self.ct_ratios = ct_ratios
+        self.rct = rct
+        self.rlead = rlead
+        self.relay_va = relay_va
+        self.ir = ir
+        self.existing_vk = existing_vk
 
-st.header("Transformer Data")
+    # ---------------------------------------------------
+    # 1️⃣ FULL LOAD CURRENT
+    # ---------------------------------------------------
+    def full_load_current(self):
+        return (self.mva * 1000) / (math.sqrt(3) * self.hv_kv)
 
-col1, col2 = st.columns(2)
+    # ---------------------------------------------------
+    # 2️⃣ ASSIGNED MAX THROUGH FAULT CURRENT
+    # ---------------------------------------------------
+    def through_fault_current(self):
+        return self.bus_fault_ka * 1000
 
-with col1:
-    mva = st.number_input("Transformer MVA", value=100.0)
-    hv_kv = st.number_input("HV Voltage (kV)", value=132.0)
-    stability_factor = st.number_input("Stability Factor", value=8.0)
+    # ---------------------------------------------------
+    # 3️⃣ STABILITY VOLTAGE (ESI CORRECT)
+    # Vs = I_sec × (Rct + Rlead)
+    # ---------------------------------------------------
+    def stability_voltage(self, ifault, ct):
+        isec = ifault / ct
+        return isec * (self.rct + self.rlead)
 
-with col2:
-    rct = st.number_input("CT Resistance (Ohm)", value=6.0)
-    rl = st.number_input("Lead Resistance (Ohm)", value=1.0)
-    relay_va = st.number_input("Relay Burden (VA)", value=0.2)
-    ir = st.number_input("Relay Pickup Current (A)", value=0.1)
+    # ---------------------------------------------------
+    # 4️⃣ STABILISING RESISTOR
+    # ---------------------------------------------------
+    def stabilising_resistor(self, vs):
+        return vs / self.ir
 
-ct_input = st.text_input("CT Ratios (comma separated)", "400,600,800")
-existing_vk = st.number_input("Existing CT Knee Point Vk (Optional, 0 if unknown)", value=0.0)
+    # ---------------------------------------------------
+    # 5️⃣ MINIMUM REQUIRED KNEE POINT
+    # Vk ≥ 2 × Vs
+    # ---------------------------------------------------
+    def required_vk(self, vs):
+        return 2 * vs
 
-# =============================
-# CALCULATION SECTION
-# =============================
+    # ---------------------------------------------------
+    # 6️⃣ RECOMMENDED VK (1.5 SAFETY)
+    # ---------------------------------------------------
+    def recommended_vk(self, vk_min):
+        return 1.5 * vk_min
 
-if st.button("Calculate REF Settings"):
+    # ---------------------------------------------------
+    # 7️⃣ LOAD ADEQUACY CHECK
+    # ---------------------------------------------------
+    def load_check(self, ct, ifl):
+        return ct >= ifl
 
-    ct_ratios = [int(x.strip()) for x in ct_input.split(",")]
+    # ---------------------------------------------------
+    # MASTER EVALUATION
+    # ---------------------------------------------------
+    def evaluate(self):
 
-    # Step 1: IFL
-    ifl = (mva * 1000) / (math.sqrt(3) * hv_kv)
+        ifl = self.full_load_current()
+        ifault = self.through_fault_current()
 
-    # Step 2: Through Fault
-    ithrough = stability_factor * ifl
+        results = []
 
-    # Step 3: Relay Resistance
-    rrelay = relay_va / (ir ** 2)
+        for ct in self.ct_ratios:
 
-    # Step 4: Loop Resistance
-    rloop = rct + rl + rrelay
+            load_ok = self.load_check(ct, ifl)
 
-    results = []
+            vs = self.stability_voltage(ifault, ct)
+            rst = self.stabilising_resistor(vs)
+            vk_min = self.required_vk(vs)
+            vk_rec = self.recommended_vk(vk_min)
 
-    for ct in ct_ratios:
+            stability_margin = None
+            verdict = "—"
 
-        isec = ithrough / ct
+            if self.existing_vk:
+                stability_margin = self.existing_vk / vk_min
+                verdict = "PASS" if self.existing_vk >= vk_min else "FAIL"
 
-        vs = isec * rloop
+            results.append({
+                "CT Ratio": ct,
+                "Load Adequate": "YES" if load_ok else "NO",
+                "Full Load Current (A)": round(ifl,2),
+                "Through Fault (A)": round(ifault,2),
+                "Secondary Fault (A)": round(ifault/ct,3),
+                "Stability Voltage Vs (V)": round(vs,2),
+                "Stabilising Resistor Rst (Ω)": round(rst,2),
+                "Vk Minimum (V)": round(vk_min,2),
+                "Vk Recommended (V)": round(vk_rec,2),
+                "Stability Margin": round(stability_margin,2) if stability_margin else "—",
+                "Verdict": verdict
+            })
 
-        rst = vs / ir
+        df = pd.DataFrame(results)
 
-        vsa = (relay_va / ir) + (ir * rst)
+        # Remove CTs that fail load adequacy
+        df_valid = df[df["Load Adequate"] == "YES"]
 
-        vk_min = 2 * vsa
-        vk_rec = 1.5 * vk_min
+        if not df_valid.empty:
+            recommended_ct = df_valid.iloc[0]["CT Ratio"]
+        else:
+            recommended_ct = None
 
-        stability_margin = None
-        verdict = "OK"
-
-        if existing_vk > 0:
-            stability_margin = existing_vk / vk_min
-            verdict = "PASS" if existing_vk > vk_min else "FAIL"
-
-        results.append({
-            "CT Ratio": ct,
-            "IFL (A)": round(ifl,2),
-            "Through Fault (A)": round(ithrough,2),
-            "Secondary Fault (A)": round(isec,3),
-            "Vs Required (V)": round(vs,2),
-            "Rst Required (Ohm)": round(rst,2),
-            "Vk Min Required (V)": round(vk_min,2),
-            "Vk Recommended (V)": round(vk_rec,2),
-            "Stability Margin": round(stability_margin,2) if stability_margin else "—",
-            "Verdict": verdict
-        })
-
-    df = pd.DataFrame(results)
-
-    st.subheader("CT Comparison Results")
-    st.dataframe(df)
-
-    best = df.iloc[0]
-    st.success(f"Recommended CT Ratio: {best['CT Ratio']}")
-
-    # =============================
-    # FORMULAS DISPLAY
-    # =============================
-
-    st.header("Formulas Used")
-
-    with st.expander("Full Load Current"):
-        st.latex(r"I_{FL} = \frac{MVA \times 1000}{\sqrt{3} \times V}")
-
-    with st.expander("Through Fault Current"):
-        st.latex(r"I_{through} = Stability\ Factor \times I_{FL}")
-
-    with st.expander("Secondary Fault Current"):
-        st.latex(r"I_{sec} = \frac{I_{through}}{CT\ Ratio}")
-
-    with st.expander("Voltage Requirement"):
-        st.latex(r"V_s = I_{sec} \times (R_{CT} + R_{lead} + R_{relay})")
-
-    with st.expander("Stabilizing Resistor"):
-        st.latex(r"R_{st} = \frac{V_s}{I_r}")
-
-    with st.expander("Minimum Knee Point Voltage"):
-        st.latex(r"V_k > 2 \times V_{sa}")
-
-    with st.expander("Recommended Knee Point Voltage"):
-        st.latex(r"V_k(recommended) = 1.5 \times V_k(min)")
+        return df, recommended_ct
