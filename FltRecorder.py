@@ -81,9 +81,10 @@ if cfg_file and dat_file:
 
     st.plotly_chart(fig, use_container_width=True)
 
-  # -----------------------------
-# Digital Channels (Robust Version)
 # -----------------------------
+# Digital Channels (Safe Version)
+# -----------------------------
+
 status_raw = rec.status
 status_names = rec.status_channel_ids
 
@@ -98,7 +99,6 @@ if status_raw and len(status_raw) > 0:
 
     n_rows = len(status_names)
 
-    # Dynamically adjust spacing
     vertical_spacing = min(0.02, 0.5 / max(1, n_rows))
 
     fig_d = make_subplots(
@@ -115,7 +115,7 @@ if status_raw and len(status_raw) > 0:
                 y=status_array[i],
                 mode="lines",
                 name=status_names[i],
-                line=dict(shape="hv", width=1.2),
+                line=dict(shape="hv", width=1.2)
             ),
             row=i+1,
             col=1
@@ -128,7 +128,7 @@ if status_raw and len(status_raw) > 0:
         )
 
     fig_d.update_layout(
-        height=max(300, 80 * n_rows),
+        height=max(300, 70 * n_rows),
         title="Digital Status Signals",
         showlegend=False
     )
@@ -137,7 +137,7 @@ if status_raw and len(status_raw) > 0:
 
 else:
     st.warning("No digital channels found in this record.")
-
+    
     # -----------------------------
     # Event Detection (Simple Amplitude Based)
     # -----------------------------
