@@ -1,34 +1,25 @@
 import streamlit as st
 import numpy as np
-import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import comtrade as ct
-import math
+import re
 
-st.set_page_config(page_title="COMTRADE Fault Analyzer", layout="wide")
+st.set_page_config(page_title="COMTRADE Viewer", layout="wide")
 
-st.title("⚡ COMTRADE Fault Record Analyzer")
-st.markdown("Upload matching **CFG** and **DAT** files.")
+st.title("⚡ COMTRADE Fault Record Viewer")
 
-# -----------------------------
-# File Upload Section
-# -----------------------------
 cfg_file = st.file_uploader("Upload CFG file", type=["cfg"])
 dat_file = st.file_uploader("Upload DAT file", type=["dat"])
 
 if cfg_file and dat_file:
 
-    # Save temporary files
     with open("temp.cfg", "wb") as f:
         f.write(cfg_file.read())
 
     with open("temp.dat", "wb") as f:
         f.write(dat_file.read())
 
-    # -----------------------------
-    # Load COMTRADE
-    # -----------------------------
     rec = ct.Comtrade()
     rec.load("temp.cfg", "temp.dat")
 
@@ -37,147 +28,138 @@ if cfg_file and dat_file:
     analog_names = rec.analog_channel_ids
     analog_data = np.array(rec.analog)
 
-    # Normalize analog shape
     if analog_data.shape[0] != len(analog_names):
         analog_data = analog_data.T
 
-    # -----------------------------
-    # Analog Plot
-    # -----------------------------
+    # ---------------------------------------------------
+    # Select Only 4 Voltage & 4 Current Channels
+    # ---------------------------------------------------
+
+    voltage_channels = []
+    current_channels = []
+
+    for name in analog_names:
+        name_upper = name.upper()
+
+        if re.search(r'\b(V|U)[A-Z]?\b', name_upper):
+            voltage_channels.append(name)
+
+        elif re.search(r'\bI[A-Z]?\b', name_upper):
+            current_channels.append(name)
+
+    voltage_channels = voltage_channels[:4]
+    current_channels = current_channels[:4]
+
+    selected_channels = voltage_channels + current_channels
+
+    # ---------------------------------------------------
+    # Plot Analog Channels (2 Rows)
+    # ---------------------------------------------------
+
     st.subheader("Analog Channels")
 
-    fig = go.Figure()
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
+                        subplot_titles=("Voltages", "Currents"))
 
-    for i, name in enumerate(analog_names):
+    for name in voltage_channels:
+        idx = analog_names.index(name)
         fig.add_trace(
             go.Scatter(
                 x=time,
-                y=analog_data[i],
+                y=analog_data[idx],
                 mode="lines",
                 name=name
-            )
+            ),
+            row=1,
+            col=1
+        )
+
+    for name in current_channels:
+        idx = analog_names.index(name)
+        fig.add_trace(
+            go.Scatter(
+                x=time,
+                y=analog_data[idx],
+                mode="lines",
+                name=name
+            ),
+            row=2,
+            col=1
         )
 
     # Trigger marker
     trigger = getattr(rec, "trigger_time", None)
-    if trigger is not None:
-        fig.add_vline(
-            x=float(trigger),
-            line_color="red",
-            line_dash="dash"
-        )
+    if trigger:
+        fig.add_vline(x=float(trigger), line_color="red", line_dash="dash")
 
-    fig.update_layout(
-        height=600,
-        title="Analog Waveforms",
-        xaxis_title="Time (s)"
-    )
+    fig.update_layout(height=700)
+    fig.update_xaxes(title_text="Time (s)", row=2, col=1)
 
     st.plotly_chart(fig, use_container_width=True)
 
-    # -----------------------------
-    # Digital Channels (Safe)
-    # -----------------------------
+    # ---------------------------------------------------
+    # Digital Channels (Only Changed Signals)
+    # ---------------------------------------------------
+
     status_raw = rec.status
     status_names = rec.status_channel_ids
 
-    if status_raw and len(status_raw) > 0:
+    changed_signals = []
 
-        st.subheader("Digital Channels")
+    if status_raw and len(status_raw) > 0:
 
         status_array = np.array(status_raw)
 
         if status_array.shape[0] != len(status_names):
             status_array = status_array.T
 
-        n_rows = len(status_names)
+        for i, name in enumerate(status_names):
+            signal = status_array[i]
+            if np.max(signal) != np.min(signal):
+                changed_signals.append((name, signal))
 
-        vertical_spacing = min(0.02, 0.5 / max(1, n_rows))
+        if len(changed_signals) > 0:
 
-        fig_d = make_subplots(
-            rows=n_rows,
-            cols=1,
-            shared_xaxes=True,
-            vertical_spacing=vertical_spacing
-        )
+            st.subheader("Digital Signals (Changed Only)")
 
-        for i in range(n_rows):
-            fig_d.add_trace(
-                go.Scatter(
-                    x=time,
-                    y=status_array[i],
-                    mode="lines",
-                    name=status_names[i],
-                    line=dict(shape="hv", width=1.2)
-                ),
-                row=i+1,
-                col=1
+            fig_d = make_subplots(
+                rows=len(changed_signals),
+                cols=1,
+                shared_xaxes=True,
+                vertical_spacing=0.02
             )
 
-            fig_d.update_yaxes(
-                range=[-0.2, 1.2],
-                row=i+1,
-                col=1
+            for i, (name, signal) in enumerate(changed_signals):
+                fig_d.add_trace(
+                    go.Scatter(
+                        x=time,
+                        y=signal,
+                        mode="lines",
+                        name=name,
+                        line=dict(shape="hv", width=1.5)
+                    ),
+                    row=i+1,
+                    col=1
+                )
+
+                fig_d.update_yaxes(
+                    range=[-0.2, 1.2],
+                    row=i+1,
+                    col=1
+                )
+
+            fig_d.update_layout(
+                height=200 + 100 * len(changed_signals),
+                showlegend=True
             )
 
-        fig_d.update_layout(
-            height=max(300, 70 * n_rows),
-            title="Digital Status Signals",
-            showlegend=False
-        )
+            st.plotly_chart(fig_d, use_container_width=True)
 
-        st.plotly_chart(fig_d, use_container_width=True)
+        else:
+            st.info("No digital signals changed state in this record.")
 
     else:
-        st.warning("No digital channels found in this record.")
-
-    # -----------------------------
-    # Event Detection (Simple)
-    # -----------------------------
-    amplitude = np.max(np.abs(analog_data), axis=0)
-    threshold = 0.1 * np.max(amplitude)
-
-    active_indices = np.where(amplitude >= threshold)[0]
-
-    if len(active_indices) > 0:
-        event_start = time[active_indices[0]]
-        event_end = time[active_indices[-1]]
-
-        st.success(f"Detected Event Start: {event_start:.6f} s")
-        st.success(f"Detected Event End: {event_end:.6f} s")
-
-    # -----------------------------
-    # Summary Table
-    # -----------------------------
-    st.subheader("Analog Channel Summary")
-
-    summary = []
-
-    for i, name in enumerate(analog_names):
-        peak = float(np.max(np.abs(analog_data[i])))
-        rms = float(np.sqrt(np.mean(np.square(analog_data[i]))))
-
-        summary.append({
-            "Channel": name,
-            "Peak Instantaneous": peak,
-            "RMS": rms
-        })
-
-    df_summary = pd.DataFrame(summary)
-    st.dataframe(df_summary)
-
-    # -----------------------------
-    # Record Metadata
-    # -----------------------------
-    st.subheader("Record Information")
-
-    st.json({
-        "Station Name": rec.station_name,
-        "Total Samples": len(time),
-        "Sampling Rate": getattr(rec, "frequency", None),
-        "Analog Channels": len(analog_names),
-        "Digital Channels": len(status_names) if status_names else 0
-    })
+        st.warning("No digital channels available.")
 
 else:
-    st.info("Please upload matching CFG and DAT files.")
+    st.info("Upload matching CFG and DAT files to begin.")
