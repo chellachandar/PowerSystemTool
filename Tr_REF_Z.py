@@ -1,11 +1,10 @@
 import streamlit as st
 import pandas as pd
 import math
-import plotly.graph_objects as go
 
-st.set_page_config(page_title="High Impedance REF Designer", layout="wide")
+st.set_page_config(page_title="ESI REF Optimizer", layout="wide")
 
-st.title("⚡ High Impedance REF – ESI 48-3 Compliant")
+st.title("⚡ ESI 48-3 Compliant High Impedance REF Optimizer")
 
 # =====================================================
 # INPUT SECTION
@@ -16,76 +15,73 @@ st.header("Transformer & System Data")
 col1, col2 = st.columns(2)
 
 with col1:
-    MVA = st.number_input("Transformer Rating (MVA)", value=100.0)
-    kV = st.number_input("System Voltage (kV)", value=220.0)
-    fault_kA = st.number_input("Maximum Bus Fault Level (kA)", value=7.0)
+    mva = st.number_input("Transformer MVA", value=100.0)
+    hv_kv = st.number_input("HV Voltage (kV)", value=132.0)
+    bus_fault_ka = st.number_input("System Bus Fault Level (kA)", value=8.0)
 
 with col2:
-    Rct = st.number_input("CT Secondary Resistance (Ω)", value=6.0)
-    Rlead = st.number_input("Lead Resistance (Ω)", value=1.0)
+    rct = st.number_input("CT Secondary Resistance (Ohm)", value=6.0)
+    rlead = st.number_input("Lead Resistance (Ohm)", value=1.0)
     relay_va = st.number_input("Relay Burden (VA)", value=0.2)
-    Ir = st.number_input("Relay Pickup Current (A)", value=0.1)
+    ir = st.number_input("Relay Pickup Current (A)", value=0.1)
 
-ct_input = st.text_input("Available CT Ratios (comma separated)", "400,600,800")
+ct_input = st.text_input("CT Ratios (comma separated)", "400,600,800")
 existing_vk = st.number_input("Existing CT Knee Point Vk (Optional)", value=0.0)
 
-st.markdown("---")
-
 # =====================================================
-# CALCULATION ENGINE
+# CALCULATION SECTION
 # =====================================================
 
 if st.button("Calculate REF Settings"):
 
-    CT_ratios = sorted([int(x.strip()) for x in ct_input.split(",")])
+    ct_ratios = [int(x.strip()) for x in ct_input.split(",")]
 
     # 1️⃣ Full Load Current
-    I_FL = (MVA * 1000) / (math.sqrt(3) * kV)
+    ifl = (mva * 1000) / (math.sqrt(3) * hv_kv)
 
-    # 2️⃣ Through Fault Current (Assigned Maximum)
-    I_fault = fault_kA * 1000
+    # 2️⃣ Through Fault Current
+    ifault = bus_fault_ka * 1000
 
     results = []
 
-    for CT in CT_ratios:
+    for ct in ct_ratios:
 
-        load_ok = CT >= I_FL
+        # Load adequacy check
+        load_ok = ct >= ifl
 
-        I_sec_fault = I_fault / CT
+        # Secondary through fault
+        isec = ifault / ct
 
-        # ESI Stability Voltage (Correct formula)
-        Vs = I_sec_fault * (Rct + Rlead)
+        # ESI Stability Voltage (CORRECT)
+        vs = isec * (rct + rlead)
 
-        # Strict ESI Knee Point
-        Vk_min = 2 * Vs
+        # Stabilising resistor
+        rst = vs / ir
 
-        # Engineering Recommendation
-        Vk_eng = 3 * Vs
+        # Minimum Vk
+        vk_min = 2 * vs
 
-        # Stabilising resistor (using strict ESI Vk)
-        Rst = Vk_min / Ir
+        # Recommended Vk
+        vk_rec = 1.5 * vk_min
 
-        # Stability factor
-        Stability_Factor = Vk_min / Vs if Vs != 0 else 0
-
-        # If existing Vk provided
-        margin = None
+        stability_margin = None
         verdict = "—"
 
         if existing_vk > 0:
-            margin = existing_vk / Vk_min
-            verdict = "PASS" if existing_vk >= Vk_min else "FAIL"
+            stability_margin = existing_vk / vk_min
+            verdict = "PASS" if existing_vk >= vk_min else "FAIL"
 
         results.append({
-            "CT Ratio": CT,
+            "CT Ratio": ct,
             "Load Adequate": "YES" if load_ok else "NO",
-            "Secondary Fault (A)": round(I_sec_fault, 2),
-            "Stability Voltage Vs (V)": round(Vs, 2),
-            "Vk (Strict ESI) (V)": round(Vk_min, 2),
-            "Vk (Engineering) (V)": round(Vk_eng, 2),
-            "Stabilising Resistor (Ω)": round(Rst, 2),
-            "Stability Factor": round(Stability_Factor, 2),
-            "Margin (if Vk entered)": round(margin, 2) if margin else "—",
+            "Full Load Current (A)": round(ifl,2),
+            "Through Fault (A)": round(ifault,2),
+            "Secondary Fault (A)": round(isec,3),
+            "Stability Voltage Vs (V)": round(vs,2),
+            "Stabilising Resistor Rst (Ω)": round(rst,2),
+            "Vk Minimum (V)": round(vk_min,2),
+            "Vk Recommended (V)": round(vk_rec,2),
+            "Stability Margin": round(stability_margin,2) if stability_margin else "—",
             "Verdict": verdict
         })
 
@@ -94,91 +90,38 @@ if st.button("Calculate REF Settings"):
     st.subheader("CT Comparison Results")
     st.dataframe(df)
 
-    # =====================================================
-    # AUTO CT SELECTION LOGIC
-    # =====================================================
-
+    # Filter valid CTs
     df_valid = df[df["Load Adequate"] == "YES"]
 
     if not df_valid.empty:
-        # Choose lowest CT that satisfies load
-        recommended = df_valid.iloc[0]
-        st.success(f"Recommended CT Ratio: {recommended['CT Ratio']}")
+        recommended_ct = df_valid.iloc[0]["CT Ratio"]
+        st.success(f"Recommended CT Ratio (Load Adequate): {recommended_ct}")
     else:
         st.error("⚠ No CT ratio satisfies full load current requirement.")
-        recommended = None
 
     # =====================================================
-    # GRAPHICAL STABILITY INDICATOR
+    # FORMULAS SECTION
     # =====================================================
 
-    if recommended is not None:
+    st.header("Formulas Used (ESI 48-3 Basis)")
 
-        Vs_val = recommended["Stability Voltage Vs (V)"]
-        Vk_min_val = recommended["Vk (Strict ESI) (V)"]
-        Vk_eng_val = recommended["Vk (Engineering) (V)"]
+    with st.expander("Full Load Current"):
+        st.latex(r"I_{FL} = \frac{MVA \times 1000}{\sqrt{3} \times V}")
 
-        st.subheader("📈 Stability Margin Indicator")
+    with st.expander("Through Fault Current"):
+        st.latex(r"I_f = Fault\ Level\ (kA) \times 1000")
 
-        fig = go.Figure()
+    with st.expander("Secondary Fault Current"):
+        st.latex(r"I_{sec} = \frac{I_f}{CT\ Ratio}")
 
-        fig.add_trace(go.Bar(
-            x=["Vs"],
-            y=[Vs_val],
-            name="Vs",
-            marker_color="red"
-        ))
+    with st.expander("Stability Voltage (ESI Correct)"):
+        st.latex(r"V_s = I_{sec} \times (R_{CT} + R_{lead})")
 
-        fig.add_trace(go.Bar(
-            x=["Vk (ESI)"],
-            y=[Vk_min_val],
-            name="Vk_min",
-            marker_color="green"
-        ))
+    with st.expander("Stabilising Resistor"):
+        st.latex(r"R_{st} = \frac{V_s}{I_r}")
 
-        fig.add_trace(go.Bar(
-            x=["Vk (Engineering)"],
-            y=[Vk_eng_val],
-            name="Vk_eng",
-            marker_color="blue"
-        ))
+    with st.expander("Minimum Knee Point Voltage"):
+        st.latex(r"V_k \ge 2 \times V_s")
 
-        fig.update_layout(
-            title="CT Stability Comparison",
-            yaxis_title="Voltage (V)",
-            barmode="group",
-            height=400
-        )
-
-        st.plotly_chart(fig, use_container_width=True)
-
-    st.markdown("---")
-
-    # =====================================================
-    # DISPLAY DERIVED VALUES
-    # =====================================================
-
-    st.subheader("Derived System Parameters")
-
-    colA, colB = st.columns(2)
-
-    with colA:
-        st.metric("Full Load Current (A)", round(I_FL, 2))
-        st.metric("Through Fault Current (A)", round(I_fault, 2))
-
-    with colB:
-        st.metric("Bus Fault Level (kA)", fault_kA)
-
-    st.markdown("---")
-
-    # =====================================================
-    # FORMULAE DISPLAY
-    # =====================================================
-
-    st.subheader("📘 Formulae Used (ESI 48-3 Based)")
-
-    st.latex(r"I_{FL} = \frac{MVA \times 1000}{\sqrt{3} \times V_{LL}}")
-    st.latex(r"I_{sec} = \frac{I_{fault}}{CT\ Ratio}")
-    st.latex(r"V_s = I_{sec} \times (R_{CT} + R_{lead})")
-    st.latex(r"V_k(min) = 2 \times V_s")
-    st.latex(r"V_k(eng) = 3 \times V_s")
+    with st.expander("Recommended Knee Point"):
+        st.latex(r"V_k(recommended) = 1.5 \times V_k(min)")
