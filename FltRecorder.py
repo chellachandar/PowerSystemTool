@@ -81,51 +81,62 @@ if cfg_file and dat_file:
 
     st.plotly_chart(fig, use_container_width=True)
 
-    # -----------------------------
-    # Digital Channels
-    # -----------------------------
-    status_raw = rec.status
-    status_names = rec.status_channel_ids
+  # -----------------------------
+# Digital Channels (Robust Version)
+# -----------------------------
+status_raw = rec.status
+status_names = rec.status_channel_ids
 
-    if status_raw and len(status_raw) > 0:
+if status_raw and len(status_raw) > 0:
 
-        st.subheader("Digital Channels")
+    st.subheader("Digital Channels")
 
-        status_array = np.array(status_raw)
+    status_array = np.array(status_raw)
 
-        if status_array.shape[0] != len(status_names):
-            status_array = status_array.T
+    if status_array.shape[0] != len(status_names):
+        status_array = status_array.T
 
-        fig_d = make_subplots(
-            rows=len(status_names),
-            cols=1,
-            shared_xaxes=True,
-            vertical_spacing=0.02
+    n_rows = len(status_names)
+
+    # Dynamically adjust spacing
+    vertical_spacing = min(0.02, 0.5 / max(1, n_rows))
+
+    fig_d = make_subplots(
+        rows=n_rows,
+        cols=1,
+        shared_xaxes=True,
+        vertical_spacing=vertical_spacing
+    )
+
+    for i in range(n_rows):
+        fig_d.add_trace(
+            go.Scatter(
+                x=time,
+                y=status_array[i],
+                mode="lines",
+                name=status_names[i],
+                line=dict(shape="hv", width=1.2),
+            ),
+            row=i+1,
+            col=1
         )
 
-        for i in range(len(status_names)):
-            fig_d.add_trace(
-                go.Scatter(
-                    x=time,
-                    y=status_array[i],
-                    mode="lines",
-                    name=status_names[i],
-                    line=dict(shape="hv", width=1.5)
-                ),
-                row=i+1,
-                col=1
-            )
-            fig_d.update_yaxes(range=[-0.2, 1.2], row=i+1, col=1)
-
-        fig_d.update_layout(
-            height=150 + 120 * len(status_names),
-            title="Digital Status Signals"
+        fig_d.update_yaxes(
+            range=[-0.2, 1.2],
+            row=i+1,
+            col=1
         )
 
-        st.plotly_chart(fig_d, use_container_width=True)
+    fig_d.update_layout(
+        height=max(300, 80 * n_rows),
+        title="Digital Status Signals",
+        showlegend=False
+    )
 
-    else:
-        st.warning("No digital channels found in this record.")
+    st.plotly_chart(fig_d, use_container_width=True)
+
+else:
+    st.warning("No digital channels found in this record.")
 
     # -----------------------------
     # Event Detection (Simple Amplitude Based)
