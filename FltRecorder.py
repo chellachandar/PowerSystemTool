@@ -9,19 +9,17 @@ import math
 st.set_page_config(page_title="COMTRADE Fault Analyzer", layout="wide")
 
 st.title("⚡ COMTRADE Fault Record Analyzer")
-
-st.markdown("Upload matching **1.cfg** and **1.dat** files.")
+st.markdown("Upload matching **CFG** and **DAT** files.")
 
 # -----------------------------
-# File Upload
+# File Upload Section
 # -----------------------------
-
 cfg_file = st.file_uploader("Upload CFG file", type=["cfg"])
 dat_file = st.file_uploader("Upload DAT file", type=["dat"])
 
 if cfg_file and dat_file:
 
-    # Save temporarily
+    # Save temporary files
     with open("temp.cfg", "wb") as f:
         f.write(cfg_file.read())
 
@@ -44,34 +42,30 @@ if cfg_file and dat_file:
         analog_data = analog_data.T
 
     # -----------------------------
-    # Analog DataFrame
-    # -----------------------------
-    df_analog = pd.DataFrame(
-        {analog_names[i]: analog_data[i] for i in range(len(analog_names))},
-        index=time
-    )
-
-    # -----------------------------
-    # Plot Analog Channels
+    # Analog Plot
     # -----------------------------
     st.subheader("Analog Channels")
 
     fig = go.Figure()
 
-    for col in df_analog.columns:
+    for i, name in enumerate(analog_names):
         fig.add_trace(
             go.Scatter(
-                x=df_analog.index,
-                y=df_analog[col],
+                x=time,
+                y=analog_data[i],
                 mode="lines",
-                name=col
+                name=name
             )
         )
 
-    # Trigger Marker
+    # Trigger marker
     trigger = getattr(rec, "trigger_time", None)
-    if trigger:
-        fig.add_vline(x=float(trigger), line_color="red", line_dash="dash")
+    if trigger is not None:
+        fig.add_vline(
+            x=float(trigger),
+            line_color="red",
+            line_dash="dash"
+        )
 
     fig.update_layout(
         height=600,
@@ -81,70 +75,69 @@ if cfg_file and dat_file:
 
     st.plotly_chart(fig, use_container_width=True)
 
-# -----------------------------
-# Digital Channels (Safe Version)
-# -----------------------------
+    # -----------------------------
+    # Digital Channels (Safe)
+    # -----------------------------
+    status_raw = rec.status
+    status_names = rec.status_channel_ids
 
-status_raw = rec.status
-status_names = rec.status_channel_ids
+    if status_raw and len(status_raw) > 0:
 
-if status_raw and len(status_raw) > 0:
+        st.subheader("Digital Channels")
 
-    st.subheader("Digital Channels")
+        status_array = np.array(status_raw)
 
-    status_array = np.array(status_raw)
+        if status_array.shape[0] != len(status_names):
+            status_array = status_array.T
 
-    if status_array.shape[0] != len(status_names):
-        status_array = status_array.T
+        n_rows = len(status_names)
 
-    n_rows = len(status_names)
+        vertical_spacing = min(0.02, 0.5 / max(1, n_rows))
 
-    vertical_spacing = min(0.02, 0.5 / max(1, n_rows))
-
-    fig_d = make_subplots(
-        rows=n_rows,
-        cols=1,
-        shared_xaxes=True,
-        vertical_spacing=vertical_spacing
-    )
-
-    for i in range(n_rows):
-        fig_d.add_trace(
-            go.Scatter(
-                x=time,
-                y=status_array[i],
-                mode="lines",
-                name=status_names[i],
-                line=dict(shape="hv", width=1.2)
-            ),
-            row=i+1,
-            col=1
+        fig_d = make_subplots(
+            rows=n_rows,
+            cols=1,
+            shared_xaxes=True,
+            vertical_spacing=vertical_spacing
         )
 
-        fig_d.update_yaxes(
-            range=[-0.2, 1.2],
-            row=i+1,
-            col=1
+        for i in range(n_rows):
+            fig_d.add_trace(
+                go.Scatter(
+                    x=time,
+                    y=status_array[i],
+                    mode="lines",
+                    name=status_names[i],
+                    line=dict(shape="hv", width=1.2)
+                ),
+                row=i+1,
+                col=1
+            )
+
+            fig_d.update_yaxes(
+                range=[-0.2, 1.2],
+                row=i+1,
+                col=1
+            )
+
+        fig_d.update_layout(
+            height=max(300, 70 * n_rows),
+            title="Digital Status Signals",
+            showlegend=False
         )
 
-    fig_d.update_layout(
-        height=max(300, 70 * n_rows),
-        title="Digital Status Signals",
-        showlegend=False
-    )
+        st.plotly_chart(fig_d, use_container_width=True)
 
-    st.plotly_chart(fig_d, use_container_width=True)
+    else:
+        st.warning("No digital channels found in this record.")
 
-else:
-    st.warning("No digital channels found in this record.")
-    
     # -----------------------------
-    # Event Detection (Simple Amplitude Based)
+    # Event Detection (Simple)
     # -----------------------------
-    amp = np.max(np.abs(analog_data), axis=0)
-    threshold = 0.1 * np.max(amp)
+    amplitude = np.max(np.abs(analog_data), axis=0)
+    threshold = 0.1 * np.max(amplitude)
 
-    active_indices = np.where(amp >= threshold)[0]
+    active_indices = np.where(amplitude >= threshold)[0]
 
     if len(active_indices) > 0:
         event_start = time[active_indices[0]]
@@ -160,27 +153,26 @@ else:
 
     summary = []
 
-    for col in df_analog.columns:
-        peak = float(np.max(np.abs(df_analog[col])))
-        rms = float(np.sqrt(np.mean(np.square(df_analog[col]))))
+    for i, name in enumerate(analog_names):
+        peak = float(np.max(np.abs(analog_data[i])))
+        rms = float(np.sqrt(np.mean(np.square(analog_data[i]))))
 
         summary.append({
-            "Channel": col,
+            "Channel": name,
             "Peak Instantaneous": peak,
             "RMS": rms
         })
 
     df_summary = pd.DataFrame(summary)
-
     st.dataframe(df_summary)
 
     # -----------------------------
-    # Metadata
+    # Record Metadata
     # -----------------------------
     st.subheader("Record Information")
 
     st.json({
-        "Station": rec.station_name,
+        "Station Name": rec.station_name,
         "Total Samples": len(time),
         "Sampling Rate": getattr(rec, "frequency", None),
         "Analog Channels": len(analog_names),
