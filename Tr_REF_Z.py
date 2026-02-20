@@ -1,179 +1,93 @@
-import math
-import numpy as np
+import streamlit as st
+import pandas as pd
+from ref_engine import REFDesignOptimizer
 
-STANDARD_VS = [24, 36, 48, 60, 75, 85, 100, 120, 150, 200, 300, 380, 400]
-STANDARD_RST = [1500, 2000, 2500, 3000, 4000, 5000, 6000, 7500, 8000, 9500, 10000]
+st.set_page_config(page_title="Transformer REF Optimizer", layout="wide")
 
-class REFDesignOptimizer:
+st.title("⚡ Transformer High Impedance REF Design Optimizer")
 
-    def __init__(self, mva, hv_kv, stability_factor,
-                 ct_taps, rct, rl, relay_va, ir,
-                 existing_vk=None):
+# ---------------------------
+# USER INPUT SECTION
+# ---------------------------
 
-        self.mva = mva
-        self.hv_kv = hv_kv
-        self.stability_factor = stability_factor
-        self.ct_taps = ct_taps
-        self.rct = rct
-        self.rl = rl
-        self.relay_va = relay_va
-        self.ir = ir
-        self.existing_vk = existing_vk
+st.header("Input Data")
 
-    # ----------------------------------------------------
-    # BASIC CALCULATIONS
-    # ----------------------------------------------------
+col1, col2 = st.columns(2)
 
-    def calculate_ifl(self):
-        return (self.mva * 1000) / (math.sqrt(3) * self.hv_kv)
+with col1:
+    mva = st.number_input("Transformer MVA", value=75.0)
+    hv_kv = st.number_input("HV Voltage (kV)", value=132.0)
+    stability_factor = st.number_input("Stability Factor (e.g. 16)", value=16.0)
 
-    def calculate_fault_current(self, ifl):
-        return self.stability_factor * ifl
+with col2:
+    rct = st.number_input("CT Resistance (Ohm)", value=8.0)
+    rl = st.number_input("Lead Resistance (Ohm)", value=1.0)
+    relay_va = st.number_input("Relay Burden (VA)", value=0.5)
+    ir = st.number_input("Relay Pickup Current (A)", value=0.04)
 
-    def secondary_fault_current(self, if_primary, ct_ratio):
-        return if_primary / ct_ratio
+ct_tap_input = st.text_input("CT Ratios (comma separated)", "300,500,800")
+existing_vk = st.number_input("Existing CT Knee Point Vk (Optional, 0 if unknown)", value=0.0)
 
-    def relay_resistance(self):
-        return self.relay_va / (self.ir ** 2)
+if st.button("Calculate REF Settings"):
 
-    def loop_resistance(self):
-        return self.rct + self.rl + self.relay_resistance()
+    ct_taps = [int(x.strip()) for x in ct_tap_input.split(",")]
 
-    def required_vs(self, if_sec):
-        return if_sec * self.loop_resistance()
+    optimizer = REFDesignOptimizer(
+        mva=mva,
+        hv_kv=hv_kv,
+        stability_factor=stability_factor,
+        ct_taps=ct_taps,
+        rct=rct,
+        rl=rl,
+        relay_va=relay_va,
+        ir=ir,
+        existing_vk=existing_vk if existing_vk > 0 else None
+    )
 
-    def round_vs(self, vs_actual):
-        for v in STANDARD_VS:
-            if v >= vs_actual:
-                return v
-        return STANDARD_VS[-1]
+    results = optimizer.evaluate()
 
-    def required_rst(self, vs_selected):
-        return vs_selected / self.ir
+    df = pd.DataFrame(results)
 
-    def round_rst(self, rst_actual):
-        for r in STANDARD_RST:
-            if r >= rst_actual:
-                return r
-        return STANDARD_RST[-1]
+    st.subheader("CT Comparison Results")
 
-    def vsa(self, rst_selected):
-        return (self.relay_va / self.ir) + (self.ir * rst_selected)
+    st.dataframe(df)
 
-    def required_vk(self, vsa):
-        return 2 * vsa
+    best = results[0]
 
-    def recommended_vk(self, vk_min):
-        return 1.5 * vk_min
+    st.success(f"Recommended CT Ratio: {best['ct_ratio']}")
 
-    def peak_voltage(self, vk, if_sec):
-        r_loop = self.loop_resistance()
-        return 2 * math.sqrt(2 * vk * (if_sec * r_loop - vk))
+    st.markdown("### Selected CT Details")
 
-    def metrosil_required(self, vp):
-        return vp > 3000
+    st.write(f"Required Vs (Actual): {best['vs_actual']:.2f} V")
+    st.write(f"Selected Vs: {best['vs_selected']} V")
 
-    # ----------------------------------------------------
-    # SCORING ENGINE
-    # ----------------------------------------------------
+    st.write(f"Required Rst (Actual): {best['rst_actual']:.2f} Ω")
+    st.write(f"Selected Rst: {best['rst_selected']} Ω")
 
-    def score_ct(self, results):
-        scores = []
+    st.write(f"Minimum Required Vk: {best['vk_min']:.2f} V")
+    st.write(f"Recommended Vk (1.5x): {best['vk_recommended']:.2f} V")
 
-        rst_values = [r["rst_selected"] for r in results]
-        vs_values = [r["vs_selected"] for r in results]
+    if existing_vk > 0:
+        st.write(f"Peak Voltage: {best['peak_voltage']:.2f} V")
+        st.write(f"Metrosil Required: {best['metrosil']}")
 
-        rst_min, rst_max = min(rst_values), max(rst_values)
-        vs_min, vs_max = min(vs_values), max(vs_values)
+    # ---------------------------
+    # FORMULA DISPLAY SECTION
+    # ---------------------------
 
-        for r in results:
+    st.header("Formulas Used")
 
-            # Stability margin
-            if self.existing_vk:
-                margin = self.existing_vk / r["vk_min"]
-            else:
-                margin = 1.5
+    with st.expander("Full Load Current"):
+        st.latex(r"I_{FL} = \frac{MVA \times 1000}{\sqrt{3} \times V}")
 
-            stability_score = min(margin / 1.5, 1)
+    with st.expander("Voltage Setting"):
+        st.latex(r"V_s = I_{F(sec)} \times R_{loop}")
 
-            # Rst score
-            if rst_max != rst_min:
-                rst_score = 1 - ((r["rst_selected"] - rst_min) / (rst_max - rst_min))
-            else:
-                rst_score = 1
+    with st.expander("Stabilizing Resistor"):
+        st.latex(r"R_{st} = \frac{V_s}{I_r}")
 
-            # Vs score
-            if vs_max != vs_min:
-                vs_score = 1 - ((r["vs_selected"] - vs_min) / (vs_max - vs_min))
-            else:
-                vs_score = 1
+    with st.expander("Minimum Knee Point Voltage"):
+        st.latex(r"V_k > 2 \times V_{sa}")
 
-            # Metrosil score
-            metrosil_score = 0 if r["metrosil"] else 1
-
-            total_score = (
-                0.40 * stability_score +
-                0.25 * rst_score +
-                0.20 * vs_score +
-                0.15 * metrosil_score
-            )
-
-            scores.append(total_score)
-
-        return scores
-
-    # ----------------------------------------------------
-    # MASTER EXECUTION
-    # ----------------------------------------------------
-
-    def evaluate(self):
-
-        ifl = self.calculate_ifl()
-        if_primary = self.calculate_fault_current(ifl)
-
-        results = []
-
-        for ct in self.ct_taps:
-
-            if_sec = self.secondary_fault_current(if_primary, ct)
-            vs_actual = self.required_vs(if_sec)
-            vs_selected = self.round_vs(vs_actual)
-
-            rst_actual = self.required_rst(vs_selected)
-            rst_selected = self.round_rst(rst_actual)
-
-            vsa_value = self.vsa(rst_selected)
-            vk_min = self.required_vk(vsa_value)
-            vk_recommended = self.recommended_vk(vk_min)
-
-            vp = None
-            metrosil = None
-
-            if self.existing_vk:
-                vp = self.peak_voltage(self.existing_vk, if_sec)
-                metrosil = self.metrosil_required(vp)
-
-            results.append({
-                "ct_ratio": ct,
-                "ifl": ifl,
-                "if_primary": if_primary,
-                "if_secondary": if_sec,
-                "vs_actual": vs_actual,
-                "vs_selected": vs_selected,
-                "rst_actual": rst_actual,
-                "rst_selected": rst_selected,
-                "vk_min": vk_min,
-                "vk_recommended": vk_recommended,
-                "vsa": vsa_value,
-                "peak_voltage": vp,
-                "metrosil": metrosil
-            })
-
-        scores = self.score_ct(results)
-
-        for i, r in enumerate(results):
-            r["score"] = scores[i]
-
-        results_sorted = sorted(results, key=lambda x: x["score"], reverse=True)
-
-        return results_sorted
+    with st.expander("Peak Voltage"):
+        st.latex(r"V_p = 2\sqrt{2V_k(I_fR - V_k)}")
