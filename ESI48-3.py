@@ -1,138 +1,121 @@
 import streamlit as st
 import math
 
-st.set_page_config(page_title="High Impedance Busbar Design Tool", layout="wide")
+st.set_page_config(page_title="AREVA MCAG High Impedance Sheet", layout="wide")
 
-st.title("⚡ High Impedance Busbar Protection – Design Mode")
-st.markdown("Based strictly on ESI 48-3 methodology")
+st.title("⚡ High Impedance Busbar Protection Calculation")
+st.markdown("AREVA MCAG 34 Methodology – With ESI 48-3 Clause References")
 
-# --------------------------------------------------------
-# INPUT SECTION (Only system & CT physical data allowed)
-# --------------------------------------------------------
+# ------------------------------------------------------------
+# INPUT SECTION
+# ------------------------------------------------------------
 
-st.header("🔹 Input – System & CT Data")
+st.header("🔹 Input Data")
 
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    fault_primary = st.number_input("Maximum Fault Current (Primary kA)", value=40.0)
-    ct_primary = st.number_input("CT Primary Rating (A)", value=2000)
+    fault_max = st.number_input("Maximum Fault Current (kA)", value=40.0)
+    fault_min = st.number_input("Minimum Fault Current (kA)", value=18.9)
+    ct_ratio = st.number_input("CT Ratio (Primary/1A)", value=2000)
 
 with col2:
-    r_ct = st.number_input("CT Secondary Resistance Rct (Ohms)", value=6.0)
-    r_lead = st.number_input("Lead Resistance Rlead (Ohms)", value=1.175)
+    r_ct = st.number_input("CT Secondary Resistance Rct (Ω)", value=6.0)
+    r_lead = st.number_input("Lead Resistance Rlead (Ω)", value=1.175)
+    excitation_current = st.number_input("CT Excitation Current at Vs (A)", value=0.003)
 
 with col3:
     n_ct = st.number_input("Number of CTs in Parallel (n)", value=7)
-    excitation_current = st.number_input("Excitation Current at Vs (A)", value=0.003)
+    isr = st.number_input("Supervision Relay Current Isr (A)", value=0.002)
+    ims = st.number_input("Metrosil Current Ims (A)", value=0.002)
 
-# CT Secondary fixed
-ct_secondary = 1
+if st.button("Run AREVA Sheet Calculation"):
 
-if st.button("Run Full Design Calculation"):
+    # ------------------------------------------------------------
+    st.header("1️⃣ Stability Voltage – ESI 48-3 Clause 6.1")
 
-    # --------------------------------------------------------
-    st.header("Step 1 – Secondary Through Fault Current")
-    st.markdown("📖 ESI 48-3 Clause 5.6 – Rated Stability Limit")
-
-    fault_secondary = (fault_primary * 1000) / ct_primary
-
-    st.latex(r"I_F = \frac{I_{primary}}{CT\ ratio}")
-    st.write(f"I_F = ({fault_primary} × 1000) / {ct_primary}")
-    st.success(f"Secondary Through Fault Current = {round(fault_secondary,2)} A")
-
-    # --------------------------------------------------------
-    st.header("Step 2 – Total Loop Resistance")
-    st.markdown("📖 ESI 48-3 Clause 6.1")
-
-    total_resistance = r_ct + r_lead
-
-    st.latex(r"R_{total} = R_{CT} + R_{lead}")
-    st.write(f"R_total = {r_ct} + {r_lead}")
-    st.success(f"Total Loop Resistance = {round(total_resistance,3)} Ω")
-
-    # --------------------------------------------------------
-    st.header("Step 3 – Required Stability Voltage Vs'")
-    st.markdown("📖 ESI 48-3 Clause 6.1 – Stability Limit")
-
-    vs_required = fault_secondary * total_resistance
+    fault_sec = (fault_max * 1000) / ct_ratio
+    r_total = r_ct + r_lead
+    vs_required = fault_sec * r_total
 
     st.latex(r"V_s' = I_F (R_{CT} + R_{lead})")
-    st.write(f"V_s' = {fault_secondary} × {total_resistance}")
+    st.write(f"I_F = ({fault_max} × 1000) / {ct_ratio} = {round(fault_sec,2)} A")
+    st.write(f"R_total = {r_ct} + {r_lead} = {round(r_total,3)} Ω")
+    st.write(f"V_s' = {fault_sec} × {r_total}")
     st.success(f"Minimum Required Stability Voltage = {round(vs_required,2)} V")
 
-    # --------------------------------------------------------
-    st.header("Step 4 – Selected Relay Setting Voltage Vs")
+    vs_selected = math.ceil(vs_required/10)*10
+    st.success(f"Selected Relay Setting Voltage Vs = {vs_selected} V")
 
-    vs_selected = math.ceil(vs_required / 10) * 10  # round up to next 10V
-
-    st.write("Relay setting voltage must be ≥ Vs'")
-    st.success(f"Selected Relay Voltage Vs = {vs_selected} V")
-
-    # --------------------------------------------------------
-    st.header("Step 5 – Minimum Required CT Knee Point Vk")
-    st.markdown("📖 ESI 48-3 Clause 9.3")
+    # ------------------------------------------------------------
+    st.header("2️⃣ CT Knee Point – ESI Clause 9.3")
 
     vk_required = 2 * vs_selected
 
     st.latex(r"V_k ≥ 2V_s")
-    st.write(f"Minimum Required Vk = 2 × {vs_selected}")
-    st.success(f"Required CT Knee Point Voltage ≥ {vk_required} V")
+    st.write(f"V_k ≥ 2 × {vs_selected}")
+    st.success(f"Minimum Required CT Knee Point Voltage ≥ {vk_required} V")
 
-    # --------------------------------------------------------
-    st.header("Step 6 – Relay Operating Current Is Determination")
-    st.markdown("📖 ESI 48-3 Clause 6.2 – Fault Setting")
+    # ------------------------------------------------------------
+    st.header("3️⃣ Fault Setting – ESI Clause 6.2")
 
-    # Assume 10% of minimum fault current (conservative busbar value)
-    fault_setting_primary = 0.1 * fault_primary * 1000
+    fault_setting_primary = 0.1 * fault_min * 1000
+    fault_setting_secondary = fault_setting_primary / ct_ratio
 
-    relay_setting_secondary = fault_setting_primary / ct_primary
+    st.write(f"Minimum Fault Current = {fault_min} kA")
+    st.write(f"10% of Minimum Fault Current = {fault_setting_primary} A")
 
-    st.latex(r"I_{setting} = \frac{I_s + nI_{exc}}{T}")
+    st.latex(r"I_{setting} = \frac{I_s + nI_1 + I_{sr} + I_{ms}}{T}")
 
-    st.write(f"Target Primary Fault Setting (10%) = {fault_setting_primary} A")
-    st.write(f"Secondary Fault Setting Target = {relay_setting_secondary} A")
+    is_required = fault_setting_secondary - (n_ct*excitation_current + isr + ims)
 
-    # Solve for Is
-    is_required = relay_setting_secondary - (n_ct * excitation_current)
+    st.write(f"I_s = {fault_setting_secondary} - ({n_ct}×{excitation_current} + {isr} + {ims})")
+    st.success(f"Required Relay Operating Current Is = {round(is_required,3)} A")
 
-    st.write(f"I_s = {relay_setting_secondary} - ({n_ct} × {excitation_current})")
-    st.success(f"Required Relay Operating Current Is ≈ {round(is_required,3)} A")
+    # ------------------------------------------------------------
+    st.header("4️⃣ Primary Operating Current (POC)")
 
-    # --------------------------------------------------------
-    st.header("Step 7 – Stabilising Resistor Calculation")
+    poc_max = (is_required + n_ct*excitation_current + isr + ims) * ct_ratio
+    poc_percent = (poc_max / (fault_min*1000)) * 100
 
-    rst = (vs_selected / is_required) - total_resistance
+    st.write(f"POCmax = ({is_required} + nI1 + Isr + Ims) × CT ratio")
+    st.success(f"Primary Operating Current ≈ {round(poc_max,1)} A")
+    st.success(f"Percentage of Minimum Fault Current = {round(poc_percent,2)} %")
+
+    # ------------------------------------------------------------
+    st.header("5️⃣ Stabilising Resistor")
+
+    rst = (vs_selected / is_required) - r_total
 
     st.latex(r"R_{st} = \frac{V_s}{I_s} - R_{total}")
-    st.write(f"Rst = ({vs_selected} / {round(is_required,3)}) - {total_resistance}")
+    st.write(f"Rst = ({vs_selected} / {round(is_required,3)}) - {r_total}")
     st.success(f"Required Stabilising Resistor ≈ {round(rst,2)} Ω")
 
-    # --------------------------------------------------------
-    st.header("Step 8 – Peak Voltage Check")
-    st.markdown("📖 ESI 48-3 Clause 8 & 9.4")
+    # ------------------------------------------------------------
+    st.header("6️⃣ Peak Voltage Check – ESI Clause 8 & 9.4")
 
-    vf = fault_secondary * total_resistance
+    vf = fault_sec * r_total
     peak_voltage = 2 * math.sqrt(2 * vk_required * vf)
 
-    st.latex(r"V_p ≈ 2\sqrt{2 V_k V_f}")
+    st.latex(r"V_p ≈ 2\sqrt{2V_kV_f}")
     st.write(f"Peak Voltage ≈ {round(peak_voltage,2)} V")
 
     if peak_voltage > 3000:
         st.warning("⚠ Peak Voltage > 3kV → Metrosil Required")
     else:
-        st.success("✔ Peak Voltage within acceptable limit")
+        st.success("✔ Peak Voltage within 3kV limit")
 
-    # --------------------------------------------------------
-    st.header("📘 Final Engineering Summary")
+    # ------------------------------------------------------------
+    st.header("📘 AREVA-Style Engineering Conclusion")
 
     st.markdown(f"""
-    - Required Stability Voltage = **{round(vs_required,2)} V**
-    - Selected Relay Voltage = **{vs_selected} V**
-    - Minimum Required CT Knee Point = **{vk_required} V**
-    - Required Relay Operating Current Is = **{round(is_required,3)} A**
-    - Stabilising Resistor ≈ **{round(rst,2)} Ω**
-    - Peak Voltage ≈ **{round(peak_voltage/1000,2)} kV**
+    **Stability Voltage Required:** {round(vs_required,2)} V  
+    **Selected Relay Voltage:** {vs_selected} V  
+    **Minimum Required CT Knee Point:** {vk_required} V  
+    **Relay Operating Current Is:** {round(is_required,3)} A  
+    **Stabilising Resistor:** {round(rst,2)} Ω  
+    **Primary Operating Current:** {round(poc_max,1)} A  
+    **Operating Percentage:** {round(poc_percent,2)} %  
 
-    ✔ Fully derived from ESI 48-3 without skipping steps.
+    ✔ Calculation fully aligned with AREVA MCAG methodology and ESI 48-3.
     """)
