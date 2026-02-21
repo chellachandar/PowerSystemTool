@@ -1,10 +1,19 @@
 import streamlit as st
 import math
 
-st.set_page_config(page_title="High Impedance Differential Protection", layout="wide")
+st.set_page_config(page_title="High Impedance Differential – Learning Mode", layout="wide")
 
-st.title("⚡ High Impedance Differential Protection – Detailed Learning Mode")
-st.markdown("Based on AREVA High-Z Application Methodology")
+st.title("⚡ High Impedance Differential Protection – Step-by-Step Learning Mode")
+
+st.markdown("""
+This calculator shows:
+
+1️⃣ Theoretical Calculated Values  
+2️⃣ Practical Selected Values (Engineering Decision)  
+3️⃣ Final Recalculated Design Values  
+
+Designed for young protection engineers.
+""")
 
 # ------------------------------------------------------------
 # INPUT DATA
@@ -33,10 +42,10 @@ with col3:
 # CALCULATION
 # ------------------------------------------------------------
 
-if st.button("Run Step-By-Step Calculation"):
+if st.button("Run Step-by-Step Design"):
 
     # --------------------------------------------------------
-    # 1️⃣ Secondary Fault Current
+    # STEP 1 – Secondary Fault Current
     # --------------------------------------------------------
 
     st.header("1️⃣ Secondary Through Fault Current")
@@ -44,11 +53,11 @@ if st.button("Run Step-By-Step Calculation"):
     fault_sec = (fault_max * 1000) / ct_ratio
 
     st.latex(r"I_F = \frac{I_{fmax}}{CT\ ratio}")
-    st.write(f"I_F = ( {fault_max} × 1000 ) / {ct_ratio}")
+    st.write(f"I_F = ({fault_max} × 1000) / {ct_ratio}")
     st.success(f"I_F = {round(fault_sec,2)} A")
 
     # --------------------------------------------------------
-    # 2️⃣ Stability Voltage
+    # STEP 2 – Stability Voltage
     # --------------------------------------------------------
 
     st.header("2️⃣ Stability Voltage")
@@ -56,15 +65,17 @@ if st.button("Run Step-By-Step Calculation"):
     r_total = r_ct + r_lead
 
     st.latex(r"V_s' = I_F (R_{ct} + R_l)")
-    st.write(f"V_s' = {fault_sec} × ( {r_ct} + {r_lead} )")
-    vs_required = fault_sec * r_total
-    st.success(f"V_s' = {round(vs_required,2)} V")
+    st.write(f"V_s' = {fault_sec} × ({r_ct} + {r_lead})")
 
-    vs_selected = 160.0
-    st.write("Selected Relay Voltage Vs = 160 V (Nearest Available Tap)")
+    vs_required = fault_sec * r_total
+    st.success(f"Required Stability Voltage Vs' = {round(vs_required,2)} V")
+
+    # Practical Selection
+    vs_selected = math.ceil(vs_required / 10) * 10
+    st.info(f"Selected Relay Voltage (Nearest Tap) Vs = {vs_selected} V")
 
     # --------------------------------------------------------
-    # 3️⃣ Relay Operating Current
+    # STEP 3 – Relay Operating Current (Calculated)
     # --------------------------------------------------------
 
     st.header("3️⃣ Relay Operating Current")
@@ -74,114 +85,121 @@ if st.button("Run Step-By-Step Calculation"):
 
     isr = supervision_va / vs_selected
 
-    st.latex(r"I_{setting} = \frac{I_s + nI_o + I_{sr}}{T}")
+    st.latex(r"I_s = I_{setting} - (nI_o + I_{sr})")
 
-    st.write(f"10% Minimum Fault Current = {fault_setting_primary} A")
-    st.write(f"Secondary Setting Current = {fault_setting_secondary} A")
+    is_calculated = fault_setting_secondary - (7 * io_actual + isr)
 
-    is_required = fault_setting_secondary - (7 * io_actual + isr)
+    st.write(f"I_s = {fault_setting_secondary} − (7×{io_actual} + {round(isr,5)})")
+    st.success(f"Calculated Relay Operating Current = {round(is_calculated,4)} A")
 
-    st.write(f"I_s = {fault_setting_secondary} − (7 × {io_actual} + {round(isr,5)})")
-    st.success(f"I_s ≈ {round(is_required,3)} A (Nearest Tap = 0.75 A)")
+    # Practical Selection
+    available_taps = [0.5, 0.75, 1.0, 1.25, 1.5]
+    is_selected = min(available_taps, key=lambda x: abs(x - is_calculated))
 
-    is_selected = 0.75
+    st.info(f"Selected Relay Tap = {is_selected} A")
 
     # --------------------------------------------------------
-    # 4️⃣ Stabilising Resistor
+    # STEP 4 – Stabilising Resistor (Calculated)
     # --------------------------------------------------------
 
     st.header("4️⃣ Stabilising Resistor")
 
-    st.latex(r"R_{st} = \frac{V_s}{I_s}")
+    st.latex(r"R_{st(calc)} = \frac{V_s}{I_s}")
 
     rst_calc = vs_selected / is_selected
-    rst = 190.0  # Selected nearby sheet value
 
-    st.write(f"Rst (Calculated) = {vs_selected} / {is_selected} = {round(rst_calc,2)} Ω")
-    st.write("Selected Standard Value = 190 Ω")
-    st.success(f"Rst = {rst} Ω")
+    st.write(f"Rst = {vs_selected} / {is_selected}")
+    st.success(f"Calculated Rst = {round(rst_calc,2)} Ω")
+
+    # Practical Selection (Nearest Standard Value)
+    standard_resistors = [150, 180, 190, 200, 220, 270]
+    rst_selected = min(standard_resistors, key=lambda x: abs(x - rst_calc))
+
+    st.info(f"Selected Standard Resistor = {rst_selected} Ω")
 
     # --------------------------------------------------------
-    # 5️⃣ Prospective Voltage (AREVA Formula)
+    # STEP 5 – Recalculate Using Selected Values
     # --------------------------------------------------------
 
-    st.header("5️⃣ Prospective Voltage (Including Rst)")
+    st.header("5️⃣ Recalculated Final Design Values")
 
-    R_total_peak = r_ct + (2 * r_lead) + rst + r_relay
+    R_total_peak = r_ct + (2 * r_lead) + rst_selected + r_relay
 
     st.latex(r"V_f = I_F (R_{ct} + 2R_l + R_{st} + R_{relay})")
 
-    st.write(f"V_f = {fault_sec} × ( {r_ct} + 2×{r_lead} + {rst} + {r_relay} )")
+    st.write(f"V_f = {fault_sec} × ({r_ct} + 2×{r_lead} + {rst_selected} + {r_relay})")
 
     Vf = fault_sec * R_total_peak
-    st.success(f"V_f = {round(Vf,1)} V")
+
+    st.success(f"Prospective Voltage Vf = {round(Vf,1)} V")
 
     # --------------------------------------------------------
-    # 6️⃣ Peak Voltage (Exact AREVA Formula)
+    # STEP 6 – Peak Voltage
     # --------------------------------------------------------
 
     st.header("6️⃣ Transient Peak Voltage")
 
     st.latex(r"V_p = 2\sqrt{2V_k(V_f - V_k)}")
 
-    st.write(f"V_p = 2√( 2 × {vk_actual} × ( {round(Vf,1)} − {vk_actual} ) )")
+    st.write(f"V_p = 2√(2 × {vk_actual} × ({round(Vf,1)} − {vk_actual}))")
 
     Vp = 2 * math.sqrt(2 * vk_actual * (Vf - vk_actual))
 
-    st.success(f"V_p = {round(Vp,0)} V  ({round(Vp/1000,3)} kV)")
+    st.success(f"Peak Voltage = {round(Vp,0)} V  ({round(Vp/1000,3)} kV)")
 
     if Vp > 3000:
-        st.warning("Peak Voltage > 3kV → Metrosil Required")
+        st.warning("Peak Voltage exceeds 3kV → Non-linear protection required")
     else:
-        st.success("Peak Voltage within 3kV limit")
+        st.success("Peak Voltage within safe limit")
 
     # --------------------------------------------------------
-    # 7️⃣ Continuous Resistor Power
+    # STEP 7 – Continuous Power
     # --------------------------------------------------------
 
-    st.header("7️⃣ Continuous Power Rating")
+    st.header("7️⃣ Continuous Resistor Power")
 
-    st.latex(r"P_{con} = I_s^2 R_{st}")
+    st.latex(r"P_{cont} = I_s^2 R_{st}")
 
-    P_cont = (is_selected ** 2) * rst
+    P_cont = (is_selected ** 2) * rst_selected
 
-    st.write(f"Pcon = ({is_selected})² × {rst}")
-    st.success(f"Pcon ≈ {round(P_cont,1)} W (Sheet ≈ 115 W)")
+    st.write(f"Pcon = ({is_selected})² × {rst_selected}")
+    st.success(f"Continuous Power = {round(P_cont,1)} W")
 
     # --------------------------------------------------------
-    # 8️⃣ RMS Voltage & Half Second Power
+    # STEP 8 – RMS Voltage & Short-Time Power
     # --------------------------------------------------------
 
-    st.header("8️⃣ Internal Fault RMS Voltage & Half-Second Power")
+    st.header("8️⃣ Internal Fault RMS Voltage & Short-Time Power")
 
     st.latex(r"V_{rms} = \sqrt{V_k \times R_{st} \times I_{sec}}")
 
-    V_rms = math.sqrt(vk_actual * rst * fault_sec)
+    V_rms = math.sqrt(vk_actual * rst_selected * fault_sec)
 
-    st.write(f"Vrms = √( {vk_actual} × {rst} × {fault_sec} )")
-    st.success(f"Vrms ≈ {round(V_rms,0)} V")
+    st.write(f"Vrms = √({vk_actual} × {rst_selected} × {fault_sec})")
+    st.success(f"RMS Voltage = {round(V_rms,0)} V")
 
-    st.latex(r"P_{half} = \frac{V_{rms}^2}{R_{st}}")
+    st.latex(r"P_{1s} = \frac{V_{rms}^2}{R_{st}}")
 
-    P_half = (V_rms ** 2) / rst
+    P_1s = (V_rms ** 2) / rst_selected
 
-    st.write(f"Phalf = {round(V_rms,0)}² / {rst}")
-    st.success(f"Phalf ≈ {round(P_half,0)} W (Sheet ≈ 5234 W)")
+    st.write(f"P1s = {round(V_rms,0)}² / {rst_selected}")
+    st.success(f"1-Second Power = {round(P_1s,0)} W")
 
     # --------------------------------------------------------
     # FINAL SUMMARY
     # --------------------------------------------------------
 
-    st.header("📘 Final Engineering Summary")
+    st.header("📘 Final Design Summary")
 
     st.markdown(f"""
-    Stability Voltage Required: **{round(vs_required,1)} V**  
+    Required Stability Voltage: **{round(vs_required,1)} V**  
     Selected Relay Voltage: **{vs_selected} V**  
-    Actual CT Knee Point: **{vk_actual} V**  
-    Relay Operating Current: **0.75 A**  
-    Stabilising Resistor: **190 Ω**  
+    Calculated Relay Current: **{round(is_calculated,3)} A**  
+    Selected Relay Tap: **{is_selected} A**  
+    Calculated Resistor: **{round(rst_calc,1)} Ω**  
+    Selected Resistor: **{rst_selected} Ω**  
     Prospective Voltage Vf: **{round(Vf,0)} V**  
-    Peak Voltage Vp: **{round(Vp/1000,3)} kV**  
+    Peak Voltage: **{round(Vp/1000,3)} kV**  
     Continuous Power: **{round(P_cont,1)} W**  
-    Half-Second Power: **{round(P_half,0)} W**
+    1-Second Power: **{round(P_1s,0)} W**
     """)
