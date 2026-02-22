@@ -60,7 +60,7 @@ if cfg_file and dat_file:
         time_vector = df["time"].values
 
         # -------------------------------
-        # ANALOG PROCESSING (WORKING LOGIC)
+        # ANALOG PROCESSING
         # -------------------------------
         analog_ids = make_unique(rec.analog_channel_ids)
         analog_df = pd.DataFrame(rec.analog).T
@@ -119,7 +119,7 @@ if cfg_file and dat_file:
             trip_start = None
 
         # -------------------------------
-        # CB AUXILIARY OPEN DETECTION (EARLIEST POLE)
+        # CB AUX OPEN DETECTION
         # -------------------------------
         cb_open_times = []
 
@@ -171,51 +171,36 @@ if cfg_file and dat_file:
         # Voltages
         for col in voltage_channels:
             fig.add_trace(
-                go.Scatter(
-                    x=time_vector,
-                    y=analog_df[col].values,
-                    mode="lines",
-                    name=col
-                ),
-                row=1,
-                col=1
+                go.Scatter(x=time_vector,
+                           y=analog_df[col].values,
+                           mode="lines"),
+                row=1, col=1
             )
 
         # Currents
         for col in current_channels:
             fig.add_trace(
-                go.Scatter(
-                    x=time_vector,
-                    y=analog_df[col].values,
-                    mode="lines",
-                    name=col
-                ),
-                row=2,
-                col=1
+                go.Scatter(x=time_vector,
+                           y=analog_df[col].values,
+                           mode="lines"),
+                row=2, col=1
             )
 
         # Digitals
         for i, col in enumerate(digital_channels):
             fig.add_trace(
-                go.Scatter(
-                    x=time_vector,
-                    y=digital_df[col].values,
-                    mode="lines",
-                    name=col
-                ),
-                row=i + 3,
-                col=1
+                go.Scatter(x=time_vector,
+                           y=digital_df[col].values,
+                           mode="lines"),
+                row=i + 3, col=1
             )
 
-            fig.update_yaxes(
-                range=[-0.25, 1.25],
-                row=i + 3,
-                col=1,
-                showticklabels=False
-            )
+            fig.update_yaxes(range=[-0.25, 1.25],
+                             showticklabels=False,
+                             row=i + 3, col=1)
 
         # -------------------------------
-        # VERTICAL MARKERS
+        # LABELED VERTICAL MARKERS
         # -------------------------------
 
         if fault_start is not None:
@@ -223,7 +208,9 @@ if cfg_file and dat_file:
                 x=fault_start,
                 line_width=2,
                 line_dash="dash",
-                line_color="red"
+                line_color="red",
+                annotation_text="Fault Start",
+                annotation_position="top left"
             )
 
         if trip_start is not None:
@@ -231,7 +218,9 @@ if cfg_file and dat_file:
                 x=trip_start,
                 line_width=2,
                 line_dash="dash",
-                line_color="blue"
+                line_color="blue",
+                annotation_text="Trip",
+                annotation_position="top left"
             )
 
         if cb_open_time is not None:
@@ -239,7 +228,9 @@ if cfg_file and dat_file:
                 x=cb_open_time,
                 line_width=2,
                 line_dash="dash",
-                line_color="green"
+                line_color="green",
+                annotation_text="CB Open",
+                annotation_position="top left"
             )
 
         fig.update_layout(
