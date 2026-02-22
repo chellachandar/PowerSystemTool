@@ -8,15 +8,12 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from openpyxl import load_workbook
 from openpyxl.drawing.image import Image as XLImage
-from google.colab import files
 import os
 
-# This will create an 'Upload' button in your output cell
-uploaded = files.upload()
+uploaded_file = st.file_uploader("Upload your file", type=["xlsx", "docx", "csv"])
 
-# This automatically finds the name of the file you just uploaded
-file_path = list(uploaded.keys())[0]
-print(f"Successfully uploaded: {file_path}")
+if uploaded_file is not None:
+    df = pd.read_excel(uploaded_file)
 
 
 # Read full sheet
