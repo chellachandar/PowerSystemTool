@@ -10,16 +10,15 @@ from openpyxl import load_workbook
 from openpyxl.drawing.image import Image as XLImage
 import os
 
-uploaded_file = st.file_uploader("Upload your file", type=["xlsx", "docx", "csv"])
+uploaded_file = st.file_uploader("Upload Excel File", type=["xlsx"])
 
 if uploaded_file is not None:
 
-    df = pd.read_excel(uploaded_file, header=None)
+    wb = openpyxl.load_workbook(uploaded_file)
+    sheet = wb.active
 
-    st.write("File Loaded Successfully")
-    st.write(df)
-
-    # All further processing goes here
+    value = sheet["A1"].value
+    st.write("Cell A1:", value)
 
 # Read full sheet
 
