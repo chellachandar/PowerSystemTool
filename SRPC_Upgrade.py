@@ -60,7 +60,7 @@ if cfg_file and dat_file:
         time_vector = df["time"].values
 
         # -------------------------------
-        # ANALOG PROCESSING (KEEP SIMPLE – WORKING)
+        # ANALOG PROCESSING (WORKING LOGIC)
         # -------------------------------
         analog_ids = make_unique(rec.analog_channel_ids)
         analog_df = pd.DataFrame(rec.analog).T
@@ -71,7 +71,7 @@ if cfg_file and dat_file:
         current_channels = [c for c in analog_ids if "I" in c.upper()][:4]
 
         # -------------------------------
-        # FAULT START DETECTION (CURRENT BASED)
+        # FAULT START DETECTION
         # -------------------------------
         combined_current = np.max(
             np.vstack([np.abs(analog_df[ch].values) for ch in current_channels]),
@@ -80,7 +80,6 @@ if cfg_file and dat_file:
 
         prefault_samples = int(0.2 * len(time_vector))
         prefault_mean = np.mean(combined_current[:prefault_samples])
-
         threshold = 3 * prefault_mean
 
         above = combined_current > threshold
@@ -99,7 +98,6 @@ if cfg_file and dat_file:
         digital_df.columns = digital_ids
         digital_df["time"] = time_vector
 
-        digital_df = digital_df.loc[:, (digital_df != 0).any(axis=0)]
         digital_channels = [c for c in digital_df.columns if c != "time"]
 
         # -------------------------------
@@ -121,39 +119,42 @@ if cfg_file and dat_file:
             trip_start = None
 
         # -------------------------------
-        # CB AUXILIARY OPEN DETECTION
+        # CB AUXILIARY OPEN DETECTION (EARLIEST POLE)
         # -------------------------------
-        cb_open_channels = [
-            c for c in digital_channels
-            if "CB" in c.upper() and "OPN" in c.upper()
-        ]
+        cb_open_times = []
 
-        cb_open_time = None
+        for ch in digital_channels:
+            if "CB" in ch.upper() and "OPN" in ch.upper():
+                signal = digital_df[ch].values
+                indices = np.where(signal == 1)[0]
+                if len(indices) > 0:
+                    cb_open_times.append(time_vector[indices[0]])
 
-        for cb_ch in cb_open_channels:
-            signal = digital_df[cb_ch].values
-            indices = np.where(signal == 1)[0]
-            if len(indices) > 0:
-                cb_open_time = time_vector[indices[0]]
-                break
+        if len(cb_open_times) > 0:
+            cb_open_time = min(cb_open_times)
+        else:
+            cb_open_time = None
 
         # -------------------------------
         # BENCHMARK CALCULATIONS
         # -------------------------------
-        if fault_start is not None and trip_start is not None:
-            operate_time = trip_start - fault_start
-        else:
-            operate_time = None
+        operate_time = (
+            (trip_start - fault_start)
+            if fault_start is not None and trip_start is not None
+            else None
+        )
 
-        if trip_start is not None and cb_open_time is not None:
-            breaker_time = cb_open_time - trip_start
-        else:
-            breaker_time = None
+        breaker_time = (
+            (cb_open_time - trip_start)
+            if trip_start is not None and cb_open_time is not None
+            else None
+        )
 
-        if fault_start is not None and cb_open_time is not None:
-            clearing_time = cb_open_time - fault_start
-        else:
-            clearing_time = None
+        clearing_time = (
+            (cb_open_time - fault_start)
+            if fault_start is not None and cb_open_time is not None
+            else None
+        )
 
         # -------------------------------
         # PLOTTING
@@ -213,6 +214,34 @@ if cfg_file and dat_file:
                 showticklabels=False
             )
 
+        # -------------------------------
+        # VERTICAL MARKERS
+        # -------------------------------
+
+        if fault_start is not None:
+            fig.add_vline(
+                x=fault_start,
+                line_width=2,
+                line_dash="dash",
+                line_color="red"
+            )
+
+        if trip_start is not None:
+            fig.add_vline(
+                x=trip_start,
+                line_width=2,
+                line_dash="dash",
+                line_color="blue"
+            )
+
+        if cb_open_time is not None:
+            fig.add_vline(
+                x=cb_open_time,
+                line_width=2,
+                line_dash="dash",
+                line_color="green"
+            )
+
         fig.update_layout(
             height=650 + len(digital_channels) * 80,
             title="Protection Performance Analysis",
@@ -222,7 +251,7 @@ if cfg_file and dat_file:
         st.plotly_chart(fig, use_container_width=True)
 
         # -------------------------------
-        # PROTECTION PERFORMANCE SUMMARY
+        # SUMMARY
         # -------------------------------
         st.subheader("📊 Protection Performance Summary")
 
