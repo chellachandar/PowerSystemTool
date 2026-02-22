@@ -295,7 +295,7 @@ if cfg_file and dat_file:
         
         st.markdown(
     """
-    ⚠️ **Performance Calculation Disclaimer**
+    ⚠️ **Performance Calculation Disclaimer:**
     The accuracy and availability of protection performance parameters depend entirely on the 
     disturbance recorder configuration within the relay. Missing pickup/start, trip, or breaker auxiliary digital signals will result in incomplete 
     or unavailable timing calculations.
