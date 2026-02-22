@@ -8,3 +8,4 @@ fpdf
 ezdxf
 openpyxl
 docx
+python-docx
