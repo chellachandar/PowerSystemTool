@@ -20,7 +20,7 @@ dat_file = st.sidebar.file_uploader("Upload .DAT file", type=["dat"])
 
 
 # ----------------------------------------------------------
-# Make channel names unique
+# Utility: Make channel names unique
 # ----------------------------------------------------------
 def make_unique(names):
     seen = {}
@@ -157,6 +157,20 @@ if cfg_file and dat_file:
         )
 
         # -------------------------------
+        # DISPLAY EVENT HEADER (Clean & Non-overlapping)
+        # -------------------------------
+        st.markdown("### Protection Performance Analysis")
+
+        st.markdown(
+            f"""
+            🔴 **Fault Start:** {fault_start:.4f}s &nbsp;&nbsp;&nbsp;
+            🔵 **Trip:** {trip_start:.4f}s &nbsp;&nbsp;&nbsp;
+            🟢 **CB Open:** {cb_open_time:.4f}s
+            """,
+            unsafe_allow_html=True
+        )
+
+        # -------------------------------
         # PLOTTING
         # -------------------------------
         total_rows = 2 + len(digital_channels)
@@ -199,7 +213,7 @@ if cfg_file and dat_file:
                              row=i + 3, col=1)
 
         # -------------------------------
-        # CLEAN GLOBAL MARKERS (NO REPEAT)
+        # CONTINUOUS VERTICAL LINES
         # -------------------------------
         if fault_start is not None:
             fig.add_shape(
@@ -211,15 +225,6 @@ if cfg_file and dat_file:
                 xref="x",
                 yref="paper",
                 line=dict(color="red", width=2, dash="dash")
-            )
-            fig.add_annotation(
-                x=fault_start,
-                y=1.02,
-                xref="x",
-                yref="paper",
-                text="🔴 Fault Start",
-                showarrow=False,
-                font=dict(color="red", size=12)
             )
 
         if trip_start is not None:
@@ -233,15 +238,6 @@ if cfg_file and dat_file:
                 yref="paper",
                 line=dict(color="blue", width=2, dash="dash")
             )
-            fig.add_annotation(
-                x=trip_start,
-                y=1.02,
-                xref="x",
-                yref="paper",
-                text="🔵 Trip",
-                showarrow=False,
-                font=dict(color="blue", size=12)
-            )
 
         if cb_open_time is not None:
             fig.add_shape(
@@ -254,26 +250,16 @@ if cfg_file and dat_file:
                 yref="paper",
                 line=dict(color="green", width=2, dash="dash")
             )
-            fig.add_annotation(
-                x=cb_open_time,
-                y=1.02,
-                xref="x",
-                yref="paper",
-                text="🟢 CB Open",
-                showarrow=False,
-                font=dict(color="green", size=12)
-            )
 
         fig.update_layout(
             height=650 + len(digital_channels) * 80,
-            title="Protection Performance Analysis",
             showlegend=False
         )
 
         st.plotly_chart(fig, use_container_width=True)
 
         # -------------------------------
-        # SUMMARY
+        # SUMMARY TABLE
         # -------------------------------
         st.subheader("📊 Protection Performance Summary")
 
