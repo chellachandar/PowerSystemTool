@@ -11,6 +11,7 @@ import tempfile
 import io
 import math
 import ezdxf
+from ezdxf.enums import TextEntityAlignment  # <-- Added for newer ezdxf compatibility
 
 # --- DXF CANVAS SCRAPER ENGINE ---
 # This mirrors Matplotlib output to DXF without touching your drawing logic
@@ -72,15 +73,17 @@ def export_ax_to_dxf(ax):
             except Exception:
                 pass
 
-    # 3. Extract and map Text Labels
+    # 3. Extract and map Text Labels (FIXED FOR EZDXF >= 1.0)
     for txt in ax.texts:
         x, y = txt.get_position()
         text_str = txt.get_text()
         fs = txt.get_fontsize()
         ha = txt.get_ha()
-        align = 'MIDDLE_CENTER'
-        if ha == 'left': align = 'MIDDLE_LEFT'
-        elif ha == 'right': align = 'MIDDLE_RIGHT'
+        
+        # Using strict Enum alignment
+        align = TextEntityAlignment.MIDDLE_CENTER
+        if ha == 'left': align = TextEntityAlignment.MIDDLE_LEFT
+        elif ha == 'right': align = TextEntityAlignment.MIDDLE_RIGHT
         
         lines = text_str.split('\n')
         y_off = 0
