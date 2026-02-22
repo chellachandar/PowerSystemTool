@@ -11,10 +11,8 @@ import tempfile
 import io
 import math
 import ezdxf
-from ezdxf.enums import TextEntityAlignment  # <-- Added for newer ezdxf compatibility
 
-# --- DXF CANVAS SCRAPER ENGINE ---
-# This mirrors Matplotlib output to DXF without touching your drawing logic
+# --- UPGRADED DXF CANVAS SCRAPER ENGINE ---
 def export_ax_to_dxf(ax):
     doc = ezdxf.new('R2010')
     msp = doc.modelspace()
@@ -28,6 +26,7 @@ def export_ax_to_dxf(ax):
         if color == 'red': dxf_color = 1
         elif color == 'green': dxf_color = 3
         elif color == 'blue': dxf_color = 5
+        elif color == 'black': dxf_color = 7
         
         for idx in range(len(xdata)-1):
             msp.add_line((xdata[idx], ydata[idx]), (xdata[idx+1], ydata[idx+1]), dxfattribs={'color': dxf_color})
@@ -36,7 +35,6 @@ def export_ax_to_dxf(ax):
     for patch in ax.patches:
         ec = patch.get_edgecolor()
         dxf_color = 7
-        # Convert RGBA tuple back to DXF Colors
         if ec[0] > 0.5 and ec[1] < 0.5 and ec[2] < 0.5: dxf_color = 1
         elif ec[1] > 0.5 and ec[0] < 0.5 and ec[2] < 0.5: dxf_color = 3
         elif ec[2] > 0.5 and ec[0] < 0.5 and ec[1] < 0.5: dxf_color = 5
@@ -60,7 +58,7 @@ def export_ax_to_dxf(ax):
             ratio = h / w if w > 0 else 1.0
             
             t1, t2 = patch.theta1, patch.theta2
-            if ratio > 1.0: # ezdxf handles minor/major axis strictly
+            if ratio > 1.0: 
                 mx, my = -my, mx
                 ratio = 1.0 / ratio
                 t1 -= 90
@@ -73,25 +71,38 @@ def export_ax_to_dxf(ax):
             except Exception:
                 pass
 
-    # 3. Extract and map Text Labels (FIXED FOR EZDXF >= 1.0)
+    # 3. Extract and map Text using MTEXT (Fixes Spacing to match PDF exactly)
     for txt in ax.texts:
         x, y = txt.get_position()
         text_str = txt.get_text()
+        
+        if not text_str.strip():
+            continue
+            
         fs = txt.get_fontsize()
         ha = txt.get_ha()
+        va = txt.get_va()
         
-        # Using strict Enum alignment
-        align = TextEntityAlignment.MIDDLE_CENTER
-        if ha == 'left': align = TextEntityAlignment.MIDDLE_LEFT
-        elif ha == 'right': align = TextEntityAlignment.MIDDLE_RIGHT
+        color = txt.get_color()
+        dxf_color = 7
+        if color == 'red': dxf_color = 1
+        elif color == 'green': dxf_color = 3
+        elif color == 'blue': dxf_color = 5
+
+        # AutoCAD MTEXT Attachment Points (1-9 Grid)
+        # 1: TopLeft, 2: TopCenter, 3: TopRight
+        # 4: MidLeft, 5: MidCenter, 6: MidRight
+        # 7: BotLeft, 8: BotCenter, 9: BotRight
+        if va == 'top':
+            attach = 2 if ha == 'center' else (1 if ha == 'left' else 3)
+        elif va == 'bottom' or va == 'baseline':
+            attach = 8 if ha == 'center' else (7 if ha == 'left' else 9)
+        else: # center
+            attach = 5 if ha == 'center' else (4 if ha == 'left' else 6)
         
-        lines = text_str.split('\n')
-        y_off = 0
-        for l_str in lines:
-            if l_str.strip():
-                dtxt = msp.add_text(l_str, dxfattribs={'height': fs / 10.0, 'color': 7})
-                dtxt.set_placement((x, y - y_off), align=align)
-            y_off += (fs / 10.0) * 1.5
+        # We use MTEXT which natively handles \n and exact line spacing 
+        mtext = msp.add_mtext(text_str, dxfattribs={'char_height': fs / 8.0, 'color': dxf_color})
+        mtext.set_location((x, y), attachment_point=attach)
 
     return doc
 
