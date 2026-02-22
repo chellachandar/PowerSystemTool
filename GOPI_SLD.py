@@ -487,7 +487,7 @@ if uploaded_file is not None:
                     draw_name(ax, x_offset+0.25, y_offset+1.75, L["symbol_lbl_Tcup"], fs)
 
                 elif b6=="Double Main Bus":
-                    draw_feeder1(ax, x_offset, y_offset, feeder_num, fs)
+                    draw_feeder1(ax, x_pos, y_start, feeder_label, fontsize)
 
             def draw_feeder5(ax, x_offset, y_offset, feeder_num, fs):
                 L = get_labels(feeder_num)
@@ -522,7 +522,7 @@ if uploaded_file is not None:
             for i in range(num_feeders):
                 f_type = feeder_types[i] if i < len(feeder_types) else '1'
                 f_name = str(feeder_names[i]) if i < len(feeder_names) else ''
-                if f_name.lower() == 'nan':
+                if f_name.lower() == 'nan':  
                     f_name = ''
                 x_pos = x_start + i * gap
                 feeder_label = i + 1
@@ -590,8 +590,8 @@ if uploaded_file is not None:
                         fontsize=fontsize+1
                     )
             center_x = (x_start + (num_feeders-1)*gap)/2
-            ax.text(center_x, 14, 'POWERGRID CORPORATION OF INDIA LTD', fontsize=fontsize+25, va='center', ha='center')
-            ax.text(center_x, 12, b9, fontsize=fontsize+15, va='center', ha='center')
+            ax.text(center_x, 14, 'POWERGRID CORPORATION OF INDIA LTD', fontsize=fontsize+25, va='center', ha='center')  
+            ax.text(center_x, 12, b9, fontsize=fontsize+15, va='center', ha='center')  
 
             ax.set_xlim(1,(num_feeders)*2+6)
             ax.set_ylim(-6*1.05,1.5*10.5)
@@ -653,9 +653,9 @@ if uploaded_file is not None:
                         earth_label2 = f"{b12+feeder_num}89AE1"
 
                     current_type = feeder_types[i] if i < len(feeder_types) else ""
-
-                    if current_type in ["Line_Bay", "Future_Bay"] and ((i + 1) % 3 == 1 or (i + 1) % 3 == 0):
-                        bay_num = i + 1
+                    
+                    # --- BUG FIX: Initialize bay_num unconditionally ---
+                    bay_num = i + 1
 
                     pair_index = i - 2 if (i + 1) % 3 == 0 else i + 2  
                     pair_index = pair_index if pair_index < len(feeder_types) else None
@@ -722,6 +722,59 @@ if uploaded_file is not None:
                     "earth_lbl3" : earth_lbl3,
                     "ict_lbl" : f"{int((b12+feeder_num))}ICT",
                     "rect_lbl" : f"{int((b12+feeder_num))}Reactor"
+                }
+                n=i+1
+                if (n - 3) % 3 == 0:
+                    labels["base_isolator"], labels["base_isolatorb"],labels["earth_lbl1"],labels["earth_lbl2"] = (
+                    labels["base_isolatorb"],
+                    labels["base_isolator"],
+                    labels["earth_lbl2"],
+                    labels["earth_lbl1"],
+                    )
+                return labels
+            else:
+                if (i + 1 == d6) or (i + 1 == d7):
+                    earth_label = e7
+                else:
+                    earth_label = b16
+
+                BCT_name = sheet["F6"].value
+                ACT_name = sheet["F7"].value
+                CT_name  = sheet["B22"].value
+
+                current_type = feeder_types[i] if i < len(feeder_types) else ""
+                bay_num = i + 1
+
+                if ((bay_num % 3 == 1) or (bay_num % 3 == 0)):
+                    pair_index = i - 2 if (bay_num % 3 == 0) else i + 2
+                    pair_type = feeder_types[pair_index] if pair_index < len(feeder_types) else ""
+
+                    if current_type in ["Line_Bay", "Future_Bay"] and pair_type in ["Line_Bay", "Future_Bay"]:
+                        if (bay_num - 1) % 3 == 0:  
+                            ct_label = f"{ACT_name}"
+                        elif bay_num % 3 == 0:      
+                            ct_label = f"{BCT_name}"
+                    else:
+                        ct_label = f"{CT_name}"
+                else:
+                    ct_label = f"{CT_name}"
+                labels = {
+                    "base_isolator" : b14,
+                    "base_isolatorb" : b15,
+                    "breaker_lbl" : b17,
+                    "earth_lbl1" : earth_label,
+                    "earth_lbl_BUS" : e6 ,
+                    "earth_lbl2" : b18,
+                    "iso_lbl2" : b19,
+                    "ct_lbl" : b22,
+                    "ct_lbl_middle" : ct_label ,
+                    "wt_lbl" : b23,
+                    "cvt_lbl" : b24,
+                    "la_lbl" : b25,
+                    "symbol_lbl" : f"{int((b12+feeder_num))}",
+                    "earth_lbl3" : b20,
+                    "ict_lbl" : b26,
+                    "rect_lbl" : b27
                 }
                 n=i+1
                 if (n - 3) % 3 == 0:
@@ -834,6 +887,7 @@ if uploaded_file is not None:
                     draw_la(ax, x_offset+.75, y_offset-8-1, L["la_lbl"], fs)
                     la_comp(ax, x_offset+.3, y_offset-8.2-1)
                     draw_symbol(ax, x_offset+.75, y_offset-11.1-.5, L["symbol_lbl"], fs)
+
                 else:
                     print("Invalid")
 
