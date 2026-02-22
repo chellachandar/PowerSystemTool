@@ -11,7 +11,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 st.set_page_config(layout="wide")
-st.title("⚡ Protection Performance Research Platform")
+st.title("⚡ Protection Performance Research Platform – Stable Version")
 
 st.sidebar.header("Upload COMTRADE Files")
 cfg_file = st.sidebar.file_uploader("Upload .CFG", type=["cfg"])
@@ -36,11 +36,11 @@ def make_unique(names):
 
 
 def calculate_rms(signal, window_samples):
-    return np.sqrt(
-        np.convolve(signal**2,
-                    np.ones(window_samples)/window_samples,
-                    mode='same')
-    )
+    rms = np.zeros_like(signal)
+    for i in range(window_samples, len(signal)):
+        window = signal[i-window_samples:i]
+        rms[i] = np.sqrt(np.mean(window**2))
+    return rms
 
 
 def symmetrical_components(Ia, Ib, Ic):
@@ -77,23 +77,33 @@ if cfg_file and dat_file:
         time_vector = df["time"].values
 
         # =====================================================
-        # ANALOG PROCESSING
+        # ANALOG PROCESSING (ROBUST)
         # =====================================================
         analog_ids = make_unique(rec.analog_channel_ids)
         analog_df = pd.DataFrame(rec.analog).T
         analog_df.columns = analog_ids
         analog_df["time"] = time_vector
 
-        # Auto detect 4 Voltages & 4 Currents
-        voltage_channels = [c for c in analog_ids if "V" in c.upper()][:4]
-        current_channels = [c for c in analog_ids if "I" in c.upper()][:4]
+        voltage_channels = []
+        current_channels = []
+
+        for idx, ch in enumerate(rec.cfg.analog_channels):
+            unit = ch.units.upper().strip()
+
+            if unit == "V":
+                voltage_channels.append(analog_ids[idx])
+            elif unit == "A":
+                current_channels.append(analog_ids[idx])
+
+        voltage_channels = voltage_channels[:4]
+        current_channels = current_channels[:4]
 
         # =====================================================
-        # RMS ENGINE
+        # RMS ENGINE (STABLE)
         # =====================================================
         sampling_interval = time_vector[1] - time_vector[0]
         sampling_freq = 1 / sampling_interval
-        window_samples = int(sampling_freq / 50)  # 1-cycle RMS (50 Hz)
+        window_samples = int(sampling_freq / 50)  # 1 cycle @ 50 Hz
 
         rms_currents = {}
         for ch in current_channels:
@@ -103,14 +113,17 @@ if cfg_file and dat_file:
             )
 
         # =====================================================
-        # AUTOMATIC FAULT DETECTION
+        # FAULT DETECTION (ADAPTIVE)
         # =====================================================
         combined_rms = np.max(
             np.vstack([rms_currents[ch] for ch in current_channels]),
             axis=0
         )
 
-        threshold = 0.2 * np.max(combined_rms)
+        prefault_samples = int(0.2 * len(time_vector))
+        prefault_rms = np.mean(combined_rms[:prefault_samples])
+        threshold = 1.5 * prefault_rms
+
         fault_indices = np.where(combined_rms > threshold)[0]
 
         if len(fault_indices) > 0:
@@ -123,29 +136,30 @@ if cfg_file and dat_file:
             fault_duration = 0
 
         # =====================================================
-        # SYMMETRICAL COMPONENT ENGINE
+        # SYMMETRICAL COMPONENTS (FAULT WINDOW)
         # =====================================================
-        if len(current_channels) >= 3:
+        if len(current_channels) >= 3 and len(fault_indices) > 0:
 
-            Ia = rms_currents[current_channels[0]]
-            Ib = rms_currents[current_channels[1]]
-            Ic = rms_currents[current_channels[2]]
+            fw = slice(fault_indices[0], fault_indices[-1])
+
+            Ia = analog_df[current_channels[0]].values[fw]
+            Ib = analog_df[current_channels[1]].values[fw]
+            Ic = analog_df[current_channels[2]].values[fw]
 
             I0, I1, I2 = symmetrical_components(Ia, Ib, Ic)
 
-            I0_mag = np.abs(I0)
-            I1_mag = np.abs(I1)
-            I2_mag = np.abs(I2)
+            I0_mag = np.mean(np.abs(I0))
+            I1_mag = np.mean(np.abs(I1))
+            I2_mag = np.mean(np.abs(I2))
 
-            if np.mean(I0_mag) > 0.1 * np.mean(I1_mag):
+            if I0_mag > 0.1 * I1_mag:
                 fault_type = "Ground Fault"
-            elif np.mean(I2_mag) > 0.1 * np.mean(I1_mag):
+            elif I2_mag > 0.1 * I1_mag:
                 fault_type = "Phase-to-Phase Fault"
             else:
                 fault_type = "Three Phase Fault"
-
         else:
-            fault_type = "Insufficient Phase Data"
+            fault_type = "Not Determined"
 
         # =====================================================
         # DIGITAL PROCESSING
@@ -158,7 +172,6 @@ if cfg_file and dat_file:
         digital_df = digital_df.loc[:, (digital_df != 0).any(axis=0)]
         digital_channels = [c for c in digital_df.columns if c != "time"]
 
-        # Trip selection
         st.sidebar.header("Trip Channel Selection")
         trip_channel = st.sidebar.selectbox(
             "Select Trip Digital",
@@ -168,13 +181,11 @@ if cfg_file and dat_file:
         trip_signal = digital_df[trip_channel].values
         trip_indices = np.where(trip_signal == 1)[0]
 
-        if len(trip_indices) > 0:
+        if len(trip_indices) > 0 and fault_start is not None:
             trip_start = time_vector[trip_indices[0]]
-            trip_end = time_vector[trip_indices[-1]]
-            operate_time = trip_start - fault_start if fault_start else None
+            operate_time = trip_start - fault_start
         else:
             trip_start = None
-            trip_end = None
             operate_time = None
 
         # =====================================================
@@ -186,42 +197,36 @@ if cfg_file and dat_file:
             rows=total_rows,
             cols=1,
             shared_xaxes=True,
-            subplot_titles=["Voltages (4)", "Currents (4)"] + digital_channels
+            subplot_titles=["Voltages (4)", "Currents (4 - RMS)"] + digital_channels
         )
 
         # Voltages
         for col in voltage_channels:
             fig.add_trace(
-                go.Scatter(
-                    x=time_vector,
-                    y=analog_df[col].values,
-                    mode="lines",
-                    name=col
-                ),
+                go.Scatter(x=time_vector,
+                           y=analog_df[col].values,
+                           mode="lines",
+                           name=col),
                 row=1, col=1
             )
 
-        # Currents
+        # RMS Currents
         for col in current_channels:
             fig.add_trace(
-                go.Scatter(
-                    x=time_vector,
-                    y=rms_currents[col],
-                    mode="lines",
-                    name=f"{col} (RMS)"
-                ),
+                go.Scatter(x=time_vector,
+                           y=rms_currents[col],
+                           mode="lines",
+                           name=f"{col} RMS"),
                 row=2, col=1
             )
 
-        # Digitals
+        # Digital Channels
         for i, col in enumerate(digital_channels):
             fig.add_trace(
-                go.Scatter(
-                    x=time_vector,
-                    y=digital_df[col].values,
-                    mode="lines",
-                    name=col
-                ),
+                go.Scatter(x=time_vector,
+                           y=digital_df[col].values,
+                           mode="lines",
+                           name=col),
                 row=i+3, col=1
             )
             fig.update_yaxes(range=[-0.25, 1.25],
@@ -229,7 +234,7 @@ if cfg_file and dat_file:
                              row=i+3, col=1)
 
         fig.update_layout(
-            height=600 + len(digital_channels)*100,
+            height=600 + len(digital_channels)*90,
             showlegend=False,
             title="Protection Research Analysis"
         )
@@ -237,7 +242,7 @@ if cfg_file and dat_file:
         st.plotly_chart(fig, use_container_width=True)
 
         # =====================================================
-        # RESEARCH SUMMARY TABLE
+        # SUMMARY TABLE
         # =====================================================
         st.subheader("📊 Protection Performance Summary")
 
