@@ -11,8 +11,9 @@ import tempfile
 import io
 import math
 import ezdxf
+from ezdxf.enums import TextEntityAlignment
 
-# --- ADVANCED DXF ENGINE (USING NATIVE MTEXT) ---
+# --- POINTS-TO-UNITS MATHEMATICAL DXF ENGINE ---
 def export_ax_to_dxf(ax):
     doc = ezdxf.new('R2010')
     msp = doc.modelspace()
@@ -71,7 +72,7 @@ def export_ax_to_dxf(ax):
             except Exception:
                 pass
 
-    # 3. MTEXT Implementation (Guarantees perfect line spacing like PDF)
+    # 3. Extract and map Text Labels (PERFECT SPACING FIX)
     for txt in ax.texts:
         x, y = txt.get_position()
         text_str = txt.get_text()
@@ -89,22 +90,31 @@ def export_ax_to_dxf(ax):
         elif color == 'green': dxf_color = 3
         elif color == 'blue': dxf_color = 5
 
-        # AutoCAD 9-Point Alignment Grid mapping
+        # MATHEMATICAL SCALING: Convert Matplotlib Points to DXF Grid Units
+        h = fs * 0.04  
+        line_gap = h * 1.5 
+        
+        lines = text_str.split('\n')
+        num_lines = len(lines)
+        
+        # Calculate precise Y anchor to guarantee exact PDF parity
         if va == 'top':
-            attach = 2 if ha == 'center' else (1 if ha == 'left' else 3)
+            start_center_y = y - (h / 2.0)
         elif va in ['bottom', 'baseline']:
-            attach = 8 if ha == 'center' else (7 if ha == 'left' else 9)
+            start_center_y = y + ((num_lines - 1) * line_gap) + (h / 2.0)
         else: # center
-            attach = 5 if ha == 'center' else (4 if ha == 'left' else 6)
+            start_center_y = y + ((num_lines - 1) * line_gap) / 2.0
             
-        # Natively inserts text as a single block so AutoCAD handles the \n gaps perfectly
-        msp.add_mtext(text_str, dxfattribs={
-            'char_height': fs / 8.0, 
-            'color': dxf_color,
-            'insert': (x, y),
-            'attachment_point': attach,
-            'line_spacing_factor': 0.85 # Keeps lines tight, matching the PDF look
-        })
+        align = TextEntityAlignment.MIDDLE_CENTER
+        if ha == 'left': align = TextEntityAlignment.MIDDLE_LEFT
+        elif ha == 'right': align = TextEntityAlignment.MIDDLE_RIGHT
+        
+        current_y = start_center_y
+        for l_str in lines:
+            if l_str.strip():
+                dtxt = msp.add_text(l_str, dxfattribs={'height': h, 'color': dxf_color})
+                dtxt.set_placement((x, current_y), align=align)
+            current_y -= line_gap # Steps down mathematically
 
     return doc
 
@@ -311,9 +321,6 @@ if uploaded_file is not None:
             ax.plot([x-.05, x+.05], [y, y], color='green', linewidth=0.5)
             ax.plot([x-.025, x+.025], [y+.1, y+.1], color='green', linewidth=0.5)
 
-        # -------------------------------------------------------------
-        # BRANCH 1: Double Main / Transfer Bus
-        # -------------------------------------------------------------
         if b6 in ["Double Main Transfer Bus", "Double Main Bus"]:
 
             def get_labels(feeder_num):
