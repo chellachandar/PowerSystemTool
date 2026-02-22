@@ -11,9 +11,8 @@ import tempfile
 import io
 import math
 import ezdxf
-from ezdxf.enums import TextEntityAlignment
 
-# --- ADVANCED DXF CANVAS SCRAPER ENGINE ---
+# --- ADVANCED DXF ENGINE (USING NATIVE MTEXT) ---
 def export_ax_to_dxf(ax):
     doc = ezdxf.new('R2010')
     msp = doc.modelspace()
@@ -27,6 +26,7 @@ def export_ax_to_dxf(ax):
         if color == 'red': dxf_color = 1
         elif color == 'green': dxf_color = 3
         elif color == 'blue': dxf_color = 5
+        elif color == 'black': dxf_color = 7
         
         for idx in range(len(xdata)-1):
             msp.add_line((xdata[idx], ydata[idx]), (xdata[idx+1], ydata[idx+1]), dxfattribs={'color': dxf_color})
@@ -71,12 +71,14 @@ def export_ax_to_dxf(ax):
             except Exception:
                 pass
 
-    # 3. Extract and map Text Labels (Custom Bounding Box Math for Perfect Spacing)
+    # 3. MTEXT Implementation (Guarantees perfect line spacing like PDF)
     for txt in ax.texts:
         x, y = txt.get_position()
         text_str = txt.get_text()
-        if not text_str.strip(): continue
         
+        if not text_str.strip(): 
+            continue
+            
         fs = txt.get_fontsize()
         ha = txt.get_ha()
         va = txt.get_va()
@@ -87,31 +89,22 @@ def export_ax_to_dxf(ax):
         elif color == 'green': dxf_color = 3
         elif color == 'blue': dxf_color = 5
 
-        h = fs / 10.0  # Convert Font Size to DXF Drawing Units
-        line_spacing = h * 1.5 # Emulate Matplotlib's native line gap
-        
-        lines = text_str.split('\n')
-        num_lines = len(lines)
-        block_height = (num_lines - 1) * line_spacing + h
-        
-        # Calculate mathematically perfect vertical starting position
+        # AutoCAD 9-Point Alignment Grid mapping
         if va == 'top':
-            start_y = y - (h / 2.0)
-        elif va == 'center':
-            start_y = y + (block_height / 2.0) - (h / 2.0)
-        else: # 'bottom' or 'baseline'
-            start_y = y + block_height - (h / 2.0)
+            attach = 2 if ha == 'center' else (1 if ha == 'left' else 3)
+        elif va in ['bottom', 'baseline']:
+            attach = 8 if ha == 'center' else (7 if ha == 'left' else 9)
+        else: # center
+            attach = 5 if ha == 'center' else (4 if ha == 'left' else 6)
             
-        align = TextEntityAlignment.MIDDLE_CENTER
-        if ha == 'left': align = TextEntityAlignment.MIDDLE_LEFT
-        elif ha == 'right': align = TextEntityAlignment.MIDDLE_RIGHT
-        
-        current_y = start_y
-        for l_str in lines:
-            if l_str.strip():
-                dtxt = msp.add_text(l_str, dxfattribs={'height': h, 'color': dxf_color})
-                dtxt.set_placement((x, current_y), align=align)
-            current_y -= line_spacing # Step down perfectly for the next line
+        # Natively inserts text as a single block so AutoCAD handles the \n gaps perfectly
+        msp.add_mtext(text_str, dxfattribs={
+            'char_height': fs / 8.0, 
+            'color': dxf_color,
+            'insert': (x, y),
+            'attachment_point': attach,
+            'line_spacing_factor': 0.85 # Keeps lines tight, matching the PDF look
+        })
 
     return doc
 
