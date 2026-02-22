@@ -71,7 +71,7 @@ if cfg_file and dat_file:
         current_channels = [c for c in analog_ids if "I" in c.upper()][:4]
 
         # -------------------------------
-        # FAULT START DETECTION (Current Based)
+        # FAULT START DETECTION
         # -------------------------------
         combined_current = np.max(
             np.vstack([np.abs(analog_df[ch].values) for ch in current_channels]),
@@ -119,7 +119,7 @@ if cfg_file and dat_file:
             trip_start = None
 
         # -------------------------------
-        # CB AUX OPEN DETECTION (Earliest Pole)
+        # CB AUX OPEN DETECTION
         # -------------------------------
         cb_open_times = []
 
@@ -139,33 +139,36 @@ if cfg_file and dat_file:
         # BENCHMARK CALCULATIONS
         # -------------------------------
         operate_time = (
-            (trip_start - fault_start)
+            trip_start - fault_start
             if fault_start is not None and trip_start is not None
             else None
         )
 
         breaker_time = (
-            (cb_open_time - trip_start)
+            cb_open_time - trip_start
             if trip_start is not None and cb_open_time is not None
             else None
         )
 
         clearing_time = (
-            (cb_open_time - fault_start)
+            cb_open_time - fault_start
             if fault_start is not None and cb_open_time is not None
             else None
         )
 
         # -------------------------------
-        # DISPLAY EVENT HEADER (Clean & Non-overlapping)
+        # SAFE DISPLAY STRINGS ("--")
         # -------------------------------
-        st.markdown("### Protection Performance Analysis")
+        fault_str = f"{fault_start:.4f}s" if fault_start is not None else "--"
+        trip_str = f"{trip_start:.4f}s" if trip_start is not None else "--"
+        cb_str = f"{cb_open_time:.4f}s" if cb_open_time is not None else "--"
 
+        st.markdown("### Protection Performance Analysis")
         st.markdown(
             f"""
-            🔴 **Fault Start:** {fault_start:.4f}s &nbsp;&nbsp;&nbsp;
-            🔵 **Trip:** {trip_start:.4f}s &nbsp;&nbsp;&nbsp;
-            🟢 **CB Open:** {cb_open_time:.4f}s
+            🔴 **Fault Start:** {fault_str} &nbsp;&nbsp;&nbsp;
+            🔵 **Trip:** {trip_str} &nbsp;&nbsp;&nbsp;
+            🟢 **CB Open:** {cb_str}
             """,
             unsafe_allow_html=True
         )
@@ -273,12 +276,12 @@ if cfg_file and dat_file:
                 "Total Clearing Time (ms)"
             ],
             "Value": [
-                fault_start,
-                trip_start,
-                cb_open_time,
-                operate_time * 1000 if operate_time else None,
-                breaker_time * 1000 if breaker_time else None,
-                clearing_time * 1000 if clearing_time else None
+                fault_start if fault_start is not None else "--",
+                trip_start if trip_start is not None else "--",
+                cb_open_time if cb_open_time is not None else "--",
+                operate_time * 1000 if operate_time is not None else "--",
+                breaker_time * 1000 if breaker_time is not None else "--",
+                clearing_time * 1000 if clearing_time is not None else "--"
             ]
         })
 
