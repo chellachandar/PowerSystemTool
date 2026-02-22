@@ -5,9 +5,6 @@ import io
 
 # --- DRAFTING ENGINE (STRICTLY FROM YOUR SLD_Automation.py) ---
 def create_dxf_from_script(df):
-    # Ensure headers are clean strings
-    df.columns = [str(c).strip() for c in df.columns]
-    
     doc = ezdxf.new('R2010')
     msp = doc.modelspace()
     
@@ -17,15 +14,16 @@ def create_dxf_from_script(df):
     
     for _, row in df.iterrows():
         try:
-            # Handle potential non-numeric X_Pos data gracefully
-            x_raw = str(row.get('X_Pos', '0')).strip()
-            x = float(x_raw) if x_raw.replace('.','',1).isdigit() else 0.0
-        except:
+            # We use position-based indexing (iloc) to avoid Header Errors
+            # Assumes: Col 3 = X_Pos, Col 2 = Type, Col 1 = Bay_Name
+            x = float(row.iloc[3]) if pd.notna(row.iloc[3]) else 0.0
+            b_type = str(row.iloc[2]).upper()
+            bay_name = str(row.iloc[1])
+            cb_rating = str(row.iloc[4])
+            ct_ratio = str(row.iloc[5])
+        except Exception:
             continue
             
-        b_type = str(row.get('Type', 'LINE')).upper()
-        
-        # Geometry Logic
         # 1. Busbars
         msp.add_line((x-20, Y_BUS_A), (x+20, Y_BUS_A))
         msp.add_line((x-20, Y_BUS_B), (x+20, Y_BUS_B))
@@ -45,56 +43,34 @@ def create_dxf_from_script(df):
         bot_y = 5 if "XFMR" in b_type else 20
         msp.add_line((x, Y_BUS_A), (x, bot_y))
         
-        # 6. Annotations
-        msp.add_text(str(row.get('Bay_Name', '')), dxfattribs={'height': 2.5}).set_placement((x, 110))
-        msp.add_text(str(row.get('CB_Rating', '')), dxfattribs={'height': 1.5}).set_placement((x+4, Y_CB))
-        msp.add_text(str(row.get('CT_Ratio', '')), dxfattribs={'height': 1.5}).set_placement((x+4, Y_CT))
+        # 6. Labels
+        msp.add_text(bay_name, dxfattribs={'height': 2.5}).set_placement((x, 110))
+        msp.add_text(cb_rating, dxfattribs={'height': 1.5}).set_placement((x+4, Y_CB))
+        msp.add_text(ct_ratio, dxfattribs={'height': 1.5}).set_placement((x+4, Y_CT))
 
     return doc
 
-# --- UI LAYER WITH DEEP HEADER SCAN ---
-st.title("⚡ Power System SLD Automation")
+# --- UI LAYER WITH MANUAL OVERRIDE ---
+st.title("⚡ Power System SLD Automation (Standard Doc Mode)")
 
 uploaded_file = st.file_uploader("Upload Substation Input File", type=["xlsx", "csv"])
 
 if uploaded_file:
-    try:
-        # Step 1: Load Raw (headerless) to scan for the true start
-        if uploaded_file.name.endswith('.csv'):
-            raw = pd.read_csv(uploaded_file, header=None)
-        else:
-            raw = pd.read_excel(uploaded_file, header=None)
+    # Read the file with NO HEADER to get the raw table
+    if uploaded_file.name.endswith('.csv'):
+        df_raw = pd.read_csv(uploaded_file, header=None)
+    else:
+        df_raw = pd.read_excel(uploaded_file, header=None)
 
-        # Step 2: Deep Scan for Header Row
-        header_row_index = None
-        # We search for 'X_Pos' or 'Bay_Name' in every cell of the first 50 rows
-        for i, row in raw.head(50).iterrows():
-            clean_row = [str(val).strip().lower() for val in row.values if pd.notna(val)]
-            if 'x_pos' in clean_row or 'bay_name' in clean_row or 'type' in clean_row:
-                header_row_index = i
-                break
-        
-        if header_row_index is None:
-            st.error("Could not identify the Bay Requirement headers. Ensure 'X_Pos' is in your file.")
-            st.write("Inspecting raw file content (First 10 rows):", raw.head(10))
-        else:
-            # Step 3: Re-read with detected index
-            uploaded_file.seek(0)
-            if uploaded_file.name.endswith('.csv'):
-                df = pd.read_csv(uploaded_file, header=header_row_index)
-            else:
-                df = pd.read_excel(uploaded_file, header=header_row_index)
+    # We manually find the row where data actually starts (looking for 'ST-01' or similar)
+    # We skip the first 2 rows by default to avoid the "Total No.of Bays" summary
+    df_clean = df_raw.iloc[2:].reset_index(drop=True)
 
-            # Final cleanup of header names
-            df.columns = [str(c).strip() for c in df.columns]
-            st.success(f"Bay logic identified from Row {header_row_index + 1}")
-            st.dataframe(df.head())
+    st.write("### Verified Data (Manual Mapping Applied)")
+    st.dataframe(df_clean.head())
 
-            if st.button("Generate AutoCAD SLD"):
-                doc = create_dxf_from_script(df)
-                dxf_out = io.StringIO()
-                doc.write(dxf_out)
-                st.download_button("📥 Download .dxf", dxf_out.getvalue(), "Substation.dxf")
-
-    except Exception as e:
-        st.error(f"Critical System Error: {e}")
+    if st.button("Generate AutoCAD SLD"):
+        doc = create_dxf_from_script(df_clean)
+        dxf_out = io.StringIO()
+        doc.write(dxf_out)
+        st.download_button("📥 Download .dxf", dxf_out.getvalue(), "Substation.dxf")
