@@ -1,6 +1,6 @@
 import streamlit as st
 import matplotlib.pyplot as plt
-from matplotlib.patches import Rectangle, Polygon, Arc
+from matplotlib.patches import Rectangle, Polygon, Arc, Circle
 import matplotlib.patches as mpatches
 import openpyxl
 import pandas as pd
@@ -13,7 +13,7 @@ import math
 import ezdxf
 from ezdxf.enums import TextEntityAlignment
 
-# --- TYPOGRAPHICALLY PERFECT DXF ENGINE ---
+# --- GEOMETRICALLY PERFECT DXF ENGINE ---
 def export_ax_to_dxf(ax):
     doc = ezdxf.new('R2010')
     msp = doc.modelspace()
@@ -32,7 +32,7 @@ def export_ax_to_dxf(ax):
         for idx in range(len(xdata)-1):
             msp.add_line((xdata[idx], ydata[idx]), (xdata[idx+1], ydata[idx+1]), dxfattribs={'color': dxf_color})
 
-    # 2. Extract and map geometry (Arcs, Rectangles, Polygons)
+    # 2. Extract and map geometry (Arcs, Rectangles, Polygons, Circles)
     for patch in ax.patches:
         ec = patch.get_edgecolor()
         dxf_color = 7
@@ -48,29 +48,40 @@ def export_ax_to_dxf(ax):
         elif isinstance(patch, mpatches.Polygon):
             pts = patch.get_xy()
             msp.add_lwpolyline(pts, close=True, dxfattribs={'color': dxf_color})
+            
+        elif isinstance(patch, mpatches.Circle):
+            cx, cy = patch.center
+            msp.add_circle((cx, cy), radius=patch.radius, dxfattribs={'color': dxf_color})
         
         elif isinstance(patch, mpatches.Arc):
-            w, h = patch.width, patch.height
+            theta1 = patch.theta1
+            theta2 = patch.theta2
+            if theta2 < theta1: 
+                theta2 += 360
+            
+            # ----------------------------------------------------
+            # ANTI-DISTORTION MATH: High-Res Polyline Stroking
+            # This fixes the CT, VT, and Reactor symbols perfectly
+            # ----------------------------------------------------
+            num_segments = 36 # Smooth enough to look perfectly curved in CAD
+            angles = [math.radians(theta1 + (theta2 - theta1) * i / num_segments) for i in range(num_segments + 1)]
+            
+            w = patch.width / 2.0
+            h = patch.height / 2.0
             cx, cy = patch.center
-            rad_angle = math.radians(patch.angle)
+            rot = math.radians(patch.angle)
+            cos_r, sin_r = math.cos(rot), math.sin(rot)
             
-            mx = (w/2.0) * math.cos(rad_angle)
-            my = (w/2.0) * math.sin(rad_angle)
-            ratio = h / w if w > 0 else 1.0
-            
-            t1, t2 = patch.theta1, patch.theta2
-            if ratio > 1.0: 
-                mx, my = -my, mx
-                ratio = 1.0 / ratio
-                t1 -= 90
-                t2 -= 90
+            pts = []
+            for a in angles:
+                ex = w * math.cos(a)
+                ey = h * math.sin(a)
+                # Apply Rotation and Translation to each vertex
+                x = ex * cos_r - ey * sin_r + cx
+                y = ex * sin_r + ey * cos_r + cy
+                pts.append((x, y))
                 
-            try:
-                msp.add_ellipse((cx, cy), major_axis=(mx, my), ratio=ratio,
-                                start_param=math.radians(t1), end_param=math.radians(t2),
-                                dxfattribs={'color': dxf_color})
-            except Exception:
-                pass
+            msp.add_lwpolyline(pts, dxfattribs={'color': dxf_color})
 
     # 3. Extract and map Text Labels (Anti-Overlap Scaling Applied)
     for txt in ax.texts:
@@ -90,22 +101,18 @@ def export_ax_to_dxf(ax):
         elif color == 'green': dxf_color = 3
         elif color == 'blue': dxf_color = 5
 
-        # ----------------------------------------------------
-        # ANTI-OVERLAP MATH: Shrink scale & compress width
-        # ----------------------------------------------------
-        h = fs * 0.025  # Tightly matches Matplotlib's visual scale
+        h = fs * 0.025  
         line_gap = h * 1.3 
         
         lines = text_str.split('\n')
         num_lines = len(lines)
         
-        # Calculate precise Y anchor to guarantee exact PDF parity
         block_height = (num_lines - 1) * line_gap + h
         if va == 'top':
             start_center_y = y - (h / 2.0)
         elif va in ['bottom', 'baseline']:
             start_center_y = y + block_height - (h / 2.0)
-        else: # center
+        else: 
             start_center_y = y + (block_height / 2.0) - (h / 2.0)
             
         align = TextEntityAlignment.MIDDLE_CENTER
@@ -115,10 +122,9 @@ def export_ax_to_dxf(ax):
         current_y = start_center_y
         for l_str in lines:
             if l_str.strip():
-                # 'width': 0.85 compresses the text horizontally so it doesn't bleed into adjacent lines
                 dtxt = msp.add_text(l_str, dxfattribs={'height': h, 'color': dxf_color, 'width': 0.85})
                 dtxt.set_placement((x, current_y), align=align)
-            current_y -= line_gap # Steps down mathematically
+            current_y -= line_gap 
 
     return doc
 
@@ -325,9 +331,6 @@ if uploaded_file is not None:
             ax.plot([x-.05, x+.05], [y, y], color='green', linewidth=0.5)
             ax.plot([x-.025, x+.025], [y+.1, y+.1], color='green', linewidth=0.5)
 
-        # -------------------------------------------------------------
-        # BRANCH 1: Double Main / Transfer Bus
-        # -------------------------------------------------------------
         if b6 in ["Double Main Transfer Bus", "Double Main Bus"]:
 
             def get_labels(feeder_num):
