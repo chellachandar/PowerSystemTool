@@ -11,7 +11,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 st.set_page_config(layout="wide")
-st.title("⚡ Protection Performance Research Platform – Stable Version")
+st.title("⚡ Protection Performance Research Platform – Stable Build")
 
 st.sidebar.header("Upload COMTRADE Files")
 cfg_file = st.sidebar.file_uploader("Upload .CFG", type=["cfg"])
@@ -52,7 +52,7 @@ def symmetrical_components(Ia, Ib, Ic):
 
 
 # ============================================================
-# Main Execution
+# MAIN EXECUTION
 # ============================================================
 
 if cfg_file and dat_file:
@@ -77,8 +77,9 @@ if cfg_file and dat_file:
         time_vector = df["time"].values
 
         # =====================================================
-        # ANALOG PROCESSING (ROBUST)
+        # ANALOG PROCESSING (ROBUST MULTI-VENDOR)
         # =====================================================
+
         analog_ids = make_unique(rec.analog_channel_ids)
         analog_df = pd.DataFrame(rec.analog).T
         analog_df.columns = analog_ids
@@ -88,22 +89,30 @@ if cfg_file and dat_file:
         current_channels = []
 
         for idx, ch in enumerate(rec.cfg.analog_channels):
-            unit = ch.units.upper().strip()
 
-            if unit == "V":
-                voltage_channels.append(analog_ids[idx])
-            elif unit == "A":
+            ch_str = str(ch).upper()
+            name = analog_ids[idx].upper()
+
+            # Current detection
+            if (" A" in ch_str or "(A" in ch_str or
+                "AMP" in ch_str or name.startswith("I")):
                 current_channels.append(analog_ids[idx])
+
+            # Voltage detection
+            elif (" V" in ch_str or "(V" in ch_str or
+                  name.startswith("V")):
+                voltage_channels.append(analog_ids[idx])
 
         voltage_channels = voltage_channels[:4]
         current_channels = current_channels[:4]
 
         # =====================================================
-        # RMS ENGINE (STABLE)
+        # RMS ENGINE (RESEARCH SAFE)
         # =====================================================
+
         sampling_interval = time_vector[1] - time_vector[0]
         sampling_freq = 1 / sampling_interval
-        window_samples = int(sampling_freq / 50)  # 1 cycle @ 50 Hz
+        window_samples = int(sampling_freq / 50)
 
         rms_currents = {}
         for ch in current_channels:
@@ -113,8 +122,9 @@ if cfg_file and dat_file:
             )
 
         # =====================================================
-        # FAULT DETECTION (ADAPTIVE)
+        # ADAPTIVE FAULT DETECTION
         # =====================================================
+
         combined_rms = np.max(
             np.vstack([rms_currents[ch] for ch in current_channels]),
             axis=0
@@ -136,8 +146,9 @@ if cfg_file and dat_file:
             fault_duration = 0
 
         # =====================================================
-        # SYMMETRICAL COMPONENTS (FAULT WINDOW)
+        # SYMMETRICAL COMPONENT ANALYSIS
         # =====================================================
+
         if len(current_channels) >= 3 and len(fault_indices) > 0:
 
             fw = slice(fault_indices[0], fault_indices[-1])
@@ -158,12 +169,14 @@ if cfg_file and dat_file:
                 fault_type = "Phase-to-Phase Fault"
             else:
                 fault_type = "Three Phase Fault"
+
         else:
             fault_type = "Not Determined"
 
         # =====================================================
         # DIGITAL PROCESSING
         # =====================================================
+
         digital_ids = make_unique(rec.digital_channel_ids)
         digital_df = pd.DataFrame(rec.status).T
         digital_df.columns = digital_ids
@@ -173,6 +186,7 @@ if cfg_file and dat_file:
         digital_channels = [c for c in digital_df.columns if c != "time"]
 
         st.sidebar.header("Trip Channel Selection")
+
         trip_channel = st.sidebar.selectbox(
             "Select Trip Digital",
             digital_channels
@@ -191,13 +205,15 @@ if cfg_file and dat_file:
         # =====================================================
         # PLOTTING
         # =====================================================
+
         total_rows = 2 + len(digital_channels)
 
         fig = make_subplots(
             rows=total_rows,
             cols=1,
             shared_xaxes=True,
-            subplot_titles=["Voltages (4)", "Currents (4 - RMS)"] + digital_channels
+            subplot_titles=["Voltages (4)",
+                            "Currents (4 - RMS)"] + digital_channels
         )
 
         # Voltages
@@ -234,7 +250,7 @@ if cfg_file and dat_file:
                              row=i+3, col=1)
 
         fig.update_layout(
-            height=600 + len(digital_channels)*90,
+            height=650 + len(digital_channels)*80,
             showlegend=False,
             title="Protection Research Analysis"
         )
@@ -242,8 +258,9 @@ if cfg_file and dat_file:
         st.plotly_chart(fig, use_container_width=True)
 
         # =====================================================
-        # SUMMARY TABLE
+        # SUMMARY
         # =====================================================
+
         st.subheader("📊 Protection Performance Summary")
 
         summary = pd.DataFrame({
