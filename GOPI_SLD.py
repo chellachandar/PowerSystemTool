@@ -22,7 +22,6 @@ if uploaded_file is not None:
     # All further processing goes here
 
 # Read full sheet
-df = pd.read_excel(file_path, header=None)
 
 # Read number of feeders ........ A1
 num_feeders = int(df.iloc[0, 1])
