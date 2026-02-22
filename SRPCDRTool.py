@@ -11,7 +11,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 st.set_page_config(layout="wide")
-st.title("⚡ COMTRADE DR Analyzer")
+st.title("⚡ COMTRADE DR Analyzer – Protection Edition")
 
 st.sidebar.header("Upload DR Files")
 
@@ -19,13 +19,12 @@ cfg_file = st.sidebar.file_uploader("Upload .CFG file", type=["cfg"])
 dat_file = st.sidebar.file_uploader("Upload .DAT file", type=["dat"])
 
 
-# -----------------------------------------------------------
-# Function: Make Channel Names Unique
-# -----------------------------------------------------------
+# ----------------------------------------------------------
+# Make channel names unique
+# ----------------------------------------------------------
 def make_unique(names):
     seen = {}
     unique = []
-
     for name in names:
         if name in seen:
             seen[name] += 1
@@ -33,13 +32,12 @@ def make_unique(names):
         else:
             seen[name] = 0
             unique.append(name)
-
     return unique
 
 
-# -----------------------------------------------------------
-# Main Processing
-# -----------------------------------------------------------
+# ----------------------------------------------------------
+# Main
+# ----------------------------------------------------------
 if cfg_file and dat_file:
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -54,82 +52,79 @@ if cfg_file and dat_file:
             f.write(dat_file.read())
 
         rec = Comtrade()
-
-        try:
-            rec.load(cfg_path, dat_path)
-        except Exception as e:
-            st.error(f"Error loading COMTRADE file: {e}")
-            st.stop()
+        rec.load(cfg_path, dat_path)
 
         st.success("Files Loaded Successfully")
 
-        # ---------------------------------------------------
-        # Time Vector
-        # ---------------------------------------------------
         df = rec.to_dataframe().reset_index()
-        time_vector = df["time"]
+        time_vector = df["time"].values
 
-        # ---------------------------------------------------
-        # Analog Channels
-        # ---------------------------------------------------
+        # -------------------------------
+        # Analog Processing
+        # -------------------------------
         analog_ids = make_unique(rec.analog_channel_ids)
-        analog_data = pd.DataFrame(rec.analog).T
+        analog_df = pd.DataFrame(rec.analog).T
+        analog_df.columns = analog_ids
+        analog_df["time"] = time_vector
 
-        analog_data.columns = analog_ids
-        analog_data["time"] = time_vector
+        # Auto detect Voltages & Currents
+        voltage_channels = [c for c in analog_ids if "V" in c.upper()][:4]
+        current_channels = [c for c in analog_ids if "I" in c.upper()][:4]
 
-        # Remove empty columns
-        analog_data = analog_data.loc[:, (analog_data != 0).any(axis=0)]
-
-        # ---------------------------------------------------
-        # Digital Channels
-        # ---------------------------------------------------
+        # -------------------------------
+        # Digital Processing
+        # -------------------------------
         digital_ids = make_unique(rec.digital_channel_ids)
-
-        digital_data = pd.DataFrame(rec.status).T
-        digital_data.columns = digital_ids
-        digital_data["time"] = time_vector
+        digital_df = pd.DataFrame(rec.status).T
+        digital_df.columns = digital_ids
+        digital_df["time"] = time_vector
 
         # Remove zero-only digital channels
-        digital_data = digital_data.loc[:, (digital_data != 0).any(axis=0)]
+        digital_df = digital_df.loc[:, (digital_df != 0).any(axis=0)]
 
-        # ---------------------------------------------------
-        # Channel Selection
-        # ---------------------------------------------------
-        st.sidebar.header("Channel Selection")
+        digital_channels = [c for c in digital_df.columns if c != "time"]
 
-        analog_options = [c for c in analog_data.columns if c != "time"]
-        selected_analog = st.sidebar.multiselect(
-            "Select Analog Channels",
-            analog_options,
-            default=analog_options[:6] if len(analog_options) >= 6 else analog_options
+        # -------------------------------
+        # Trip Selection
+        # -------------------------------
+        st.sidebar.header("Trip Analysis")
+
+        trip_channel = st.sidebar.selectbox(
+            "Select Trip Digital Channel",
+            digital_channels
         )
 
-        digital_options = [c for c in digital_data.columns if c != "time"]
-        selected_digital = st.sidebar.multiselect(
-            "Select Digital Channels",
-            digital_options,
-            default=digital_options
-        )
+        trip_signal = digital_df[trip_channel].values
 
-        # ---------------------------------------------------
-        # Plotting
-        # ---------------------------------------------------
-        total_rows = 1 + len(selected_digital)
+        trip_indices = np.where(trip_signal == 1)[0]
+
+        if len(trip_indices) > 0:
+            trip_start = time_vector[trip_indices[0]]
+            trip_end = time_vector[trip_indices[-1]]
+            fault_duration = trip_end - trip_start
+        else:
+            trip_start = None
+            trip_end = None
+            fault_duration = 0
+
+        # -------------------------------
+        # Plot Layout
+        # -------------------------------
+        total_rows = 2 + len(digital_channels)
 
         fig = make_subplots(
             rows=total_rows,
             cols=1,
             shared_xaxes=True,
-            subplot_titles=["Analog Channels"] + selected_digital
+            subplot_titles=["Voltages (4)", "Currents (4)"] + digital_channels
         )
 
-        # Analog Plot
-        for col in selected_analog:
+        # Voltages
+        for col in voltage_channels:
             fig.add_trace(
                 go.Scatter(
-                    x=analog_data["time"].values,
-                    y=analog_data[col].values,
+                    x=time_vector,
+                    y=analog_df[col].values,
                     mode="lines",
                     name=col
                 ),
@@ -137,49 +132,57 @@ if cfg_file and dat_file:
                 col=1
             )
 
-        # Digital Plots
-        for i, col in enumerate(selected_digital):
+        # Currents
+        for col in current_channels:
             fig.add_trace(
                 go.Scatter(
-                    x=digital_data["time"].values,
-                    y=digital_data[col].values,
+                    x=time_vector,
+                    y=analog_df[col].values,
                     mode="lines",
                     name=col
                 ),
-                row=i + 2,
+                row=2,
+                col=1
+            )
+
+        # Digital
+        for i, col in enumerate(digital_channels):
+            fig.add_trace(
+                go.Scatter(
+                    x=time_vector,
+                    y=digital_df[col].values,
+                    mode="lines",
+                    name=col
+                ),
+                row=i + 3,
                 col=1
             )
 
             fig.update_yaxes(
                 range=[-0.25, 1.25],
-                row=i + 2,
+                row=i + 3,
                 col=1,
                 showticklabels=False
             )
 
         fig.update_layout(
-            height=400 + len(selected_digital) * 120,
+            height=600 + len(digital_channels) * 120,
             title="DR Event Analysis",
-            showlegend=True
+            showlegend=False
         )
 
         st.plotly_chart(fig, use_container_width=True)
 
-        # ---------------------------------------------------
+        # -------------------------------
         # Event Summary
-        # ---------------------------------------------------
-        st.subheader("Event Summary")
+        # -------------------------------
+        st.subheader("⚡ Trip & Fault Summary")
 
-        col1, col2 = st.columns(2)
+        col1, col2, col3 = st.columns(3)
 
-        with col1:
-            st.write("**Analog Channels:**", len(analog_options))
-            st.write("**Digital Channels:**", len(digital_options))
-
-        with col2:
-            if selected_analog:
-                max_current = analog_data[selected_analog].abs().max().max()
-                st.write("**Maximum Magnitude:**", round(max_current, 3))
+        col1.metric("Trip Start (s)", f"{trip_start:.4f}" if trip_start else "Not Found")
+        col2.metric("Trip End (s)", f"{trip_end:.4f}" if trip_end else "Not Found")
+        col3.metric("Fault Duration (s)", f"{fault_duration:.4f}")
 
 else:
     st.info("Please upload both .CFG and .DAT files.")
