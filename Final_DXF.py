@@ -1,6 +1,6 @@
 import streamlit as st
 import matplotlib.pyplot as plt
-from matplotlib.patches import Rectangle, Polygon, Arc, Circle
+from matplotlib.patches import Rectangle, Polygon, Arc
 import matplotlib.patches as mpatches
 import openpyxl
 import pandas as pd
@@ -18,7 +18,7 @@ def export_ax_to_dxf(ax):
     doc = ezdxf.new('R2010')
     msp = doc.modelspace()
     
-    # 1. Extract and map lines
+    # 1. Extract and map Standard Lines
     for line in ax.lines:
         xdata = line.get_xdata()
         ydata = line.get_ydata()
@@ -32,64 +32,81 @@ def export_ax_to_dxf(ax):
         for idx in range(len(xdata)-1):
             msp.add_line((xdata[idx], ydata[idx]), (xdata[idx+1], ydata[idx+1]), dxfattribs={'color': dxf_color})
 
-    # 2. Extract and map geometry (Arcs, Rectangles, Polygons, Circles)
+    # 2. Extract and map complex geometry (Arcs, Rectangles, Polygons, Hatches)
     for patch in ax.patches:
         ec = patch.get_edgecolor()
-        dxf_color = 7
-        if ec[0] > 0.5 and ec[1] < 0.5 and ec[2] < 0.5: dxf_color = 1
-        elif ec[1] > 0.5 and ec[0] < 0.5 and ec[2] < 0.5: dxf_color = 3
-        elif ec[2] > 0.5 and ec[0] < 0.5 and ec[1] < 0.5: dxf_color = 5
+        fc = patch.get_facecolor()
+        
+        # Color Translator
+        def get_dxf_color(rgba):
+            if rgba[0] > 0.5 and rgba[1] < 0.5 and rgba[2] < 0.5: return 1 # Red
+            elif rgba[1] > 0.4 and rgba[0] < 0.5 and rgba[2] < 0.5: return 3 # Green
+            elif rgba[2] > 0.5 and rgba[0] < 0.5 and rgba[1] < 0.5: return 5 # Blue
+            return 7 # Black/White
+            
+        edge_color = get_dxf_color(ec)
+        face_color = get_dxf_color(fc)
+        is_filled = patch.get_fill()
         
         if isinstance(patch, mpatches.Rectangle):
             x, y = patch.get_xy()
             w, h = patch.get_width(), patch.get_height()
-            msp.add_lwpolyline([(x, y), (x+w, y), (x+w, y+h), (x, y+h)], close=True, dxfattribs={'color': dxf_color})
-        
+            pts = [(x, y), (x+w, y), (x+w, y+h), (x, y+h)]
+            if is_filled:
+                hatch = msp.add_hatch(color=face_color)
+                hatch.paths.add_polyline_path(pts, is_closed=True)
+            msp.add_lwpolyline(pts, close=True, dxfattribs={'color': edge_color})
+            
         elif isinstance(patch, mpatches.Polygon):
             pts = patch.get_xy()
-            msp.add_lwpolyline(pts, close=True, dxfattribs={'color': dxf_color})
+            if len(pts) > 1 and (pts[0][0] == pts[-1][0] and pts[0][1] == pts[-1][1]):
+                pts = pts[:-1] # Clean up duplicate closing points for AutoCAD
+            if is_filled:
+                hatch = msp.add_hatch(color=face_color)
+                hatch.paths.add_polyline_path(pts, is_closed=True)
+            msp.add_lwpolyline(pts, close=True, dxfattribs={'color': edge_color})
             
-        elif isinstance(patch, mpatches.Circle):
-            cx, cy = patch.center
-            msp.add_circle((cx, cy), radius=patch.radius, dxfattribs={'color': dxf_color})
-        
         elif isinstance(patch, mpatches.Arc):
-            theta1 = patch.theta1
-            theta2 = patch.theta2
-            if theta2 < theta1: 
-                theta2 += 360
+            w = patch.width
+            h = patch.height
             
-            # ----------------------------------------------------
-            # ANTI-DISTORTION MATH: High-Res Polyline Stroking
-            # This fixes the CT, VT, and Reactor symbols perfectly
-            # ----------------------------------------------------
-            num_segments = 36 # Smooth enough to look perfectly curved in CAD
-            angles = [math.radians(theta1 + (theta2 - theta1) * i / num_segments) for i in range(num_segments + 1)]
+            # ANTI-DISTORTION MATH: Convert Matplotlib True Angles to AutoCAD Parametric Angles
+            def true_to_parametric(theta_deg, w, h):
+                theta_rad = math.radians(theta_deg)
+                t_rad = math.atan2(w * math.sin(theta_rad), h * math.cos(theta_rad))
+                return math.degrees(t_rad) % 360.0
+                
+            t1 = true_to_parametric(patch.theta1, w, h)
+            t2 = true_to_parametric(patch.theta2, w, h)
             
-            w = patch.width / 2.0
-            h = patch.height / 2.0
+            # Guarantee Counter-Clockwise drawing exactly like Matplotlib
+            if t2 <= t1 and not math.isclose(patch.theta1, patch.theta2):
+                t2 += 360.0
+                
+            # High-Resolution Polyline Stroking (Locks the exact visual curve)
+            num_segments = 36
+            angles = [math.radians(t1 + (t2 - t1) * i / num_segments) for i in range(num_segments + 1)]
+            
             cx, cy = patch.center
             rot = math.radians(patch.angle)
             cos_r, sin_r = math.cos(rot), math.sin(rot)
             
             pts = []
             for a in angles:
-                ex = w * math.cos(a)
-                ey = h * math.sin(a)
-                # Apply Rotation and Translation to each vertex
+                ex = (w / 2.0) * math.cos(a)
+                ey = (h / 2.0) * math.sin(a)
                 x = ex * cos_r - ey * sin_r + cx
                 y = ex * sin_r + ey * cos_r + cy
                 pts.append((x, y))
                 
-            msp.add_lwpolyline(pts, dxfattribs={'color': dxf_color})
+            msp.add_lwpolyline(pts, dxfattribs={'color': edge_color})
 
-    # 3. Extract and map Text Labels (Anti-Overlap Scaling Applied)
+    # 3. Extract and map Text Labels (Mathematical Offset constraints)
     for txt in ax.texts:
         x, y = txt.get_position()
         text_str = txt.get_text()
         
-        if not text_str.strip(): 
-            continue
+        if not text_str.strip(): continue
             
         fs = txt.get_fontsize()
         ha = txt.get_ha()
@@ -101,19 +118,19 @@ def export_ax_to_dxf(ax):
         elif color == 'green': dxf_color = 3
         elif color == 'blue': dxf_color = 5
 
-        h = fs * 0.025  
-        line_gap = h * 1.3 
+        h_scale = fs * 0.025  
+        line_gap = h_scale * 1.3 
         
         lines = text_str.split('\n')
         num_lines = len(lines)
+        block_height = (num_lines - 1) * line_gap + h_scale
         
-        block_height = (num_lines - 1) * line_gap + h
         if va == 'top':
-            start_center_y = y - (h / 2.0)
+            start_center_y = y - (h_scale / 2.0)
         elif va in ['bottom', 'baseline']:
-            start_center_y = y + block_height - (h / 2.0)
+            start_center_y = y + block_height - (h_scale / 2.0)
         else: 
-            start_center_y = y + (block_height / 2.0) - (h / 2.0)
+            start_center_y = y + (block_height / 2.0) - (h_scale / 2.0)
             
         align = TextEntityAlignment.MIDDLE_CENTER
         if ha == 'left': align = TextEntityAlignment.MIDDLE_LEFT
@@ -122,7 +139,7 @@ def export_ax_to_dxf(ax):
         current_y = start_center_y
         for l_str in lines:
             if l_str.strip():
-                dtxt = msp.add_text(l_str, dxfattribs={'height': h, 'color': dxf_color, 'width': 0.85})
+                dtxt = msp.add_text(l_str, dxfattribs={'height': h_scale, 'color': dxf_color, 'width': 0.85})
                 dtxt.set_placement((x, current_y), align=align)
             current_y -= line_gap 
 
