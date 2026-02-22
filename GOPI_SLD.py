@@ -13,8 +13,13 @@ import os
 uploaded_file = st.file_uploader("Upload your file", type=["xlsx", "docx", "csv"])
 
 if uploaded_file is not None:
-    df = pd.read_excel(uploaded_file)
 
+    df = pd.read_excel(uploaded_file, header=None)
+
+    st.write("File Loaded Successfully")
+    st.write(df)
+
+    # All further processing goes here
 
 # Read full sheet
 df = pd.read_excel(file_path, header=None)
