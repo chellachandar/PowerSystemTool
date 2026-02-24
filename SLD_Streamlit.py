@@ -625,7 +625,7 @@ if st.button("Generate AutoCAD DXF", type="primary"):
                 draw_isolator(ax, x_offset+0.25, y_offset-5.0, L["base_isolatorb"], fs)
                 
                 # Continuous connecting wire
-                ax.plot([x_offset+0.25, x_offset+0.25], [y_offset+0.8, y_offset-5.02], color='red', linewidth=0.5)
+                ax.plot([x_offset+0.25, x_offset+0.25], [y_offset-0.8, y_offset-5.0], color='red', linewidth=0.5)
                 draw_name(ax, x_offset-0.5, y_offset-2.5, L["symbol_lbl"], fs)
 
             def grid_draw_feeder1(ax, x_offset, y_offset, feeder_num, fs, i):
