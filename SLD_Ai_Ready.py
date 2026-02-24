@@ -140,18 +140,18 @@ with st.container():
                     4. Types for Double Main: 'Line_Bay', 'ICT', 'Bus_Coupler', 'Reactor', 'Future_Bay', 'Transfer_Bus_coupler', 'Cable Feeder', 'No_bay'.
                     5. Output ONLY valid JSON, nothing else. Format:
                     {
-                        "b8": "Project Title", "b9": "Subtitle", "b12": Voltage (int), "b6": "Bus Configuration",
-                        "num_feeders": Total Bays (int), "qa_warning": "Warning if user asks for bad practice",
-                        "bays": [{"index": 0, "type": "Line_Bay", "name": "Name"}, ...]
+                        "b8": "Project Title", "b9": "Subtitle", "b12": 400, "b6": "Bus Configuration",
+                        "num_feeders": 6, "qa_warning": "Warning if user asks for bad practice",
+                        "bays": [{"index": 0, "type": "Line_Bay", "name": "Name"}]
                     }
                     """
                     model = genai.GenerativeModel(
-    'gemini-2.5-flash', # <-- Updated to the current live model
-    system_instruction=system_instruction,
-    generation_config={"response_mime_type": "application/json"}
-)
+                        'gemini-2.5-flash',
+                        system_instruction=system_instruction,
+                        generation_config={"response_mime_type": "application/json"}
+                    )
                     
-                   response = model.generate_content(ai_prompt)
+                    response = model.generate_content(ai_prompt)
                     
                     # Clean the raw text to strip out Markdown backticks
                     raw_text = response.text.strip()
