@@ -550,27 +550,40 @@ if st.button("Generate AutoCAD DXF", type="primary"):
                 ax.plot([x_offset+0.25, x_offset+0.25], [y_offset-3.2, y_offset-4.6+.2], color='red', linewidth=0.5)
                 draw_name(ax, x_offset-0.5, y_offset-3,L["symbol_lbl"], fs)
 
-            # --- GEOMETRICALLY SYMMETRIC TIE BAY (ENHANCED VISIBILITY) ---
+            # --- GEOMETRICALLY SYMMETRIC TIE BAY (EQUI-SPACED FIX) ---
             def middle_common_15(ax, x_offset, y_offset, feeder_num, fs, i):
                 L = get_labels_15(feeder_num, i)
+                # Define absolute CB center reference
                 cb_center_y = y_offset - 2.5 
                 
-                # 1. TIE BREAKER (The Reference Center)
-                draw_breaker(ax, x_offset+0.25, y_offset-2.5, L["breaker_lbl"], fs)
+                # Draw Center Breaker
+                draw_breaker(ax, x_offset+0.25, cb_center_y, L["breaker_lbl"], fs)
                 
-                # --- TOP HALF (Symmetrical Upwards) ---
+                # --- TOP HALF (MIRRORED UPWARDS) ---
+                # CT at +1.3 from center
                 ct_a_lbl = L["ct_lbl"].replace("CT", "ACT")
                 draw_ct(ax, x_offset+0.25, cb_center_y + 1.3, ct_a_lbl, fs)  
-                earth_sh(ax, x_offset+.25, cb_center_y + 2.6, L["earth_lbl1"], fs)
+                
+                # Earth Switch at +2.4 from center
+                # Sequence: CB -> CT -> Earth Switch -> Isolator
+                earth_sh(ax, x_offset+.25, cb_center_y + 2.4, L["earth_lbl1"], fs)
+                
+                # Isolator at +3.1 from center
                 draw_isolator(ax, x_offset+.25, cb_center_y + 3.1, L["base_isolator"], fs)
                 
-                # --- BOTTOM HALF (Symmetrical Downwards) ---
+                # --- BOTTOM HALF (EQUI-SPACED MIRROR) ---
+                # CT at -1.3 from center
                 ct_b_lbl = L["ct_lbl"].replace("CT", "BCT")
                 draw_ct(ax, x_offset+0.25, cb_center_y - 1.3, ct_b_lbl, fs)  
-                earth_sh(ax, x_offset+0.25, cb_center_y - 2.6, L["earth_lbl2"], fs)
+                
+                # Earth Switch at -2.4 from center (MIRRORED POSITION)
+                # Fix: Swapped from previous version to mirror top sequence
+                earth_sh(ax, x_offset+0.25, cb_center_y - 1.9, L["earth_lbl2"], fs)
+                
+                # Isolator at -3.1 from center (MIRRORED POSITION)
                 draw_isolator(ax, x_offset+0.25, cb_center_y - 3.1, L["base_isolatorb"], fs)
                 
-                # --- UNIFORM CONNECTING WIRE ---
+                # --- UNIFORM CONNECTING LINE ---
                 ax.plot([x_offset+0.25, x_offset+0.25], [cb_center_y + 3.1, cb_center_y - 3.1], color='red', linewidth=0.5)
                 draw_name(ax, x_offset-0.5, y_offset-2.5, L["symbol_lbl"], fs)
 
