@@ -635,33 +635,6 @@ if st.button("Generate AutoCAD DXF", type="primary"):
     ax.plot([x_offset+0.25, x_offset+0.25], [cb_center_y + 3.1, cb_center_y - 3.1], color='red', linewidth=0.5)
     draw_name(ax, x_offset-0.5, y_offset-2.5, L["symbol_lbl"], fs)
 
-            def grid_draw_feeder2(ax, x_offset, y_offset, feeder_num, fs, i):
-                L, n = get_labels_15(feeder_num, i), i+1
-                if (n - 1) % 3 == 0:
-                    common_15(ax, x_offset, y_offset, feeder_num, fs, i)
-                    ax.plot([x_offset+0.25, x_offset+0.25], [y_offset+.9, y_offset+.4], color='red', linewidth=0.5)
-                    ax.plot([x_offset+.25, x_offset+.75], [y_offset-5.8, y_offset-5.8], color='red', linewidth=0.5)
-                    ax.plot([x_offset+.75, x_offset+.75], [y_offset-5.8, y_offset+6.3], color='red', linewidth=0.5)
-                    draw_isolator(ax, x_offset+0.75,y_offset+2 , L["iso_lbl2"], fs)
-                    earth_sh(ax, x_offset+0.75, y_offset+3, L["earth_lbl3"], fs)
-                    draw_la(ax, x_offset+.75, y_offset+3.6, L["la_lbl"], fs)
-                    la_comp(ax, x_offset+.3, y_offset+3.4)
-                    draw_ict_upp(ax,x_offset+0.75, y_offset+5.2, L["ict_lbl"], fs)
-                    draw_symbol_upp(ax, x_offset+.75, y_offset+6.4, L["symbol_lbl"], fs)
-                elif (n - 2) % 3 == 0: 
-                    middle_common_15(ax, x_offset, y_offset, feeder_num, fs, i)
-                elif (n - 3) % 3 == 0:
-                    common_15(ax, x_offset, y_offset, feeder_num, fs, i)
-                    ax.plot([x_offset+0.25, x_offset+0.25], [y_offset-5.8, y_offset-6.4], color='red', linewidth=0.5)
-                    ax.plot([x_offset+.25, x_offset+.75], [y_offset+.5, y_offset+.5], color='red', linewidth=0.5)
-                    ax.plot([x_offset+.75, x_offset+.75], [y_offset+.5, y_offset-11.5], color='red', linewidth=0.5)
-                    draw_isolator(ax, x_offset+0.75, y_offset-7, L["iso_lbl2"], fs)
-                    earth_sh(ax, x_offset+0.75, y_offset-7.3, L["earth_lbl3"], fs)
-                    draw_ict(ax,x_offset+0.75, y_offset-10, L["ict_lbl"], fs)
-                    draw_la(ax, x_offset+.75, y_offset-9, L["la_lbl"], fs)
-                    la_comp(ax, x_offset+.3, y_offset-9.2)
-                    draw_symbol(ax, x_offset+.75, y_offset-11.6, L["symbol_lbl"], fs)
-
             def grid_draw_feeder3(ax, x_offset, y_offset, feeder_num, fs, i):
                 L, n = get_labels_15(feeder_num, i), i+1
                 if (n - 1) % 3 == 0:
