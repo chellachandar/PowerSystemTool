@@ -31,7 +31,7 @@ def export_ax_to_dxf(ax):
         if isinstance(patch, mpatches.Rectangle):
             x, y = patch.get_xy()
             w, h = patch.get_width(), patch.get_height()
-            pts = [(x, y), (x+w), (x+w, y+h), (x, y+h)]
+            pts = [(x, y), (x+w, y), (x+w, y+h), (x, y+h)]
             if patch.get_fill():
                 hatch = msp.add_hatch(color=face_color)
                 hatch.paths.add_polyline_path(pts, is_closed=True)
@@ -86,6 +86,7 @@ def export_ax_to_dxf(ax):
 
     return doc
 
+
 # --- DIRECT UI APPLICATION ---
 st.set_page_config(page_title="Intelligent SLD Generator", layout="wide")
 st.title("⚡ Intelligent Substation SLD Generator")
@@ -96,6 +97,7 @@ with st.sidebar:
     b9 = st.text_input("Subtitle / Station Name", value="400kV Substation")
     b12 = st.number_input("Voltage (kV)", value=400, step=11)
     b6 = st.selectbox("Bus Configuration", ["One and Half Breaker", "Double Main Bus", "Double Main Transfer Bus"])
+    
     st.divider()
     st.header("2. Station Size")
     num_feeders = int(st.number_input("Enter total number of Bays:", min_value=1, value=6, step=1))
@@ -111,24 +113,38 @@ bay_options_15 = ["Line_Bay", "ICT", "Reactor", "Future_Bay", "Cable Feeder", "T
 if b6 == "One and Half Breaker":
     st.info("💡 **One and a Half Breaker Scheme:** Middle bays are strictly locked to 'Tie_Breaker'.")
     num_diameters = math.ceil(num_feeders / 3)
+    
     for d in range(num_diameters):
         with st.container():
             st.markdown(f"#### Diameter {d+1}")
             cols = st.columns(3)
+            
             for j in range(3):
                 idx = d * 3 + j
                 if idx < num_feeders:
                     with cols[j]:
-                        if j == 1: # Tie Bay
-                            ftype = "Tie_Breaker"
-                            st.selectbox(f"Type (Locked)", ["Tie_Breaker"], index=0, disabled=True, key=f"type_{idx}")
-                        else:
-                            ftype = st.selectbox(f"Type", bay_options_15, index=0, key=f"type_{idx}")
+                        if j == 0: 
+                            position_label = "🔼 Top (Main Bus 1)"
+                            default_idx = 0 
+                            is_disabled = False
+                        elif j == 1: 
+                            position_label = "↔️ Middle (Tie Bay)"
+                            default_idx = bay_options_15.index("Tie_Breaker") 
+                            is_disabled = True 
+                        else: 
+                            position_label = "🔽 Bottom (Main Bus 2)"
+                            default_idx = 0 
+                            is_disabled = False
+                            
+                        st.markdown(f"**Bay {idx+1}: {position_label}**")
+                        ftype = st.selectbox(f"Type", bay_options_15, index=default_idx, disabled=is_disabled, key=f"type_{idx}")
                         fname = st.text_input(f"Name", value=f"Bay No {idx+1}", key=f"name_{idx}")
                         feeder_types.append(ftype)
                         feeder_names.append(fname)
         st.write("---")
+
 else:
+    st.info("💡 **Double Main / Transfer Bus Detected:** Horizontal bays.")
     cols = st.columns(4)
     for i in range(num_feeders):
         with cols[i % 4]:
@@ -141,9 +157,18 @@ else:
 
 # --- GENERATION ---
 if st.button("Generate AutoCAD DXF", type="primary"):
+    
     with st.spinner(f"Drafting Standards-Compliant Diagram..."):
-        fig, ax = plt.subplots(figsize=(20, 20))
         
+        # --- DATA SANITIZATION ---
+        for i in range(len(feeder_types)):
+            if b6 in ["Double Main Transfer Bus", "Double Main Bus"]:
+                if feeder_types[i] == "" or feeder_types[i] == "Future_Bay": 
+                    feeder_types[i] = "Line_Bay"
+            else:
+                if feeder_types[i] in ["", "Cable Feeder"]: 
+                    feeder_types[i] = "Line_Bay"
+
         # --- DRAFTING FUNCTIONS ---
         def draw_breaker(ax, x, y, label, fs):
             ax.add_patch(Rectangle((x-0.1, y-0.2), 0.2, 0.4, fill=False, edgecolor='black', linewidth=0.5))
@@ -174,7 +199,10 @@ if st.button("Generate AutoCAD DXF", type="primary"):
         def draw_name(ax, x, y, label, fs):
             ax.text(x, y+0.5, label, fontsize=fs+2, ha='center')
 
+        # ARCHITECTURE: 1.5 BREAKER
         if b6 == "One and Half Breaker":
+            fig, ax = plt.subplots(figsize=(15, 18))
+            
             def get_labels_15(feeder_num, i):
                 return {
                     "base_isolator": f"{b12+feeder_num}89A", 
@@ -186,36 +214,56 @@ if st.button("Generate AutoCAD DXF", type="primary"):
                     "symbol_lbl": f"{int(b12+feeder_num)}"
                 }
 
-            # --- THE SYMMETRICAL TIE BAY FUNCTION ---
+            def common_15(ax, x_offset, y_offset, feeder_num, fs, i):
+                L = get_labels_15(feeder_num, i)
+                draw_isolator(ax, x_offset+.25, y_offset, L["base_isolator"], fs)
+                earth_sh(ax, x_offset+.25, y_offset-.5, L["earth_lbl1"], fs)
+                draw_breaker(ax, x_offset+0.25, y_offset-2.2, L["breaker_lbl"], fs)
+                draw_ct(ax, x_offset+0.25, y_offset-3.5, L["ct_lbl"], fs) 
+                earth_sh(ax, x_offset+0.25, y_offset-3.6, L["earth_lbl2"], fs)
+                draw_isolator(ax, x_offset+0.25, y_offset-4.6, L["base_isolatorb"], fs)
+                ax.plot([x_offset+0.25, x_offset+0.25], [y_offset-3.2, y_offset-4.6+.2], color='red', linewidth=0.5)
+                draw_name(ax, x_offset-0.5, y_offset-3, L["symbol_lbl"], fs)
+
+            # THE SYMMETRICAL TIE BAY (Equi-spaced Fix)
             def middle_common_15(ax, x_offset, y_offset, feeder_num, fs, i):
                 L = get_labels_15(feeder_num, i)
                 cb_center_y = y_offset - 2.5 
-                
-                # 1. TIE BREAKER (Center Reference)
                 draw_breaker(ax, x_offset+0.25, cb_center_y, L["breaker_lbl"], fs)
                 
-                # --- TOP HALF (Upwards) ---
+                # TOP (Mirrored Upwards)
                 ct_a_lbl = L["ct_lbl"].replace("CT", "ACT")
-                draw_ct(ax, x_offset+0.25, cb_center_y + 1.25, ct_a_lbl, fs)  
+                draw_ct(ax, x_offset+0.25, cb_center_y + 1.3, ct_a_lbl, fs)  
                 earth_sh(ax, x_offset+0.25, cb_center_y + 2.5, L["earth_lbl1"], fs)
                 draw_isolator(ax, x_offset+0.25, cb_center_y + 3.1, L["base_isolator"], fs)
                 
-                # --- BOTTOM HALF (Mirrored Downwards) ---
+                # BOTTOM (Mirrored Downwards)
                 ct_b_lbl = L["ct_lbl"].replace("CT", "BCT")
-                draw_ct(ax, x_offset+0.25, cb_center_y - 1.25, ct_b_lbl, fs)  
+                draw_ct(ax, x_offset+0.25, cb_center_y - 1.3, ct_b_lbl, fs)  
                 earth_sh(ax, x_offset+0.25, cb_center_y - 2.5, L["earth_lbl2"], fs)
                 draw_isolator(ax, x_offset+0.25, cb_center_y - 3.1, L["base_isolatorb"], fs)
                 
-                # Continuous wire
                 ax.plot([x_offset+0.25, x_offset+0.25], [cb_center_y + 3.1, cb_center_y - 3.1], color='red', linewidth=0.5)
                 draw_name(ax, x_offset-0.5, cb_center_y, L["symbol_lbl"], fs)
 
-            # Execution logic for drawing bays would follow here...
+            # Restored Loop for all 3 Bays in Diameter
             for i in range(num_feeders):
-                x_pos = 5 + (i // 3) * 3
-                y_pos = 19.8 - (i % 3) * 6.8
-                if (i % 3) == 1:
-                    middle_common_15(ax, x_pos, y_pos, i+1, 4, i)
+                col, row = i // 3, i % 3
+                x_pos = 5 + col * 4
+                y_pos = 19.8 - row * 6.8
+                
+                if row == 1: # Tie Bay
+                    middle_common_15(ax, x_pos, y_pos, i+1, fontsize, i)
+                else: # Top or Bottom Bays
+                    common_15(ax, x_pos, y_pos, i+1, fontsize, i)
 
-        ax.axis('off')
+            # Bus Lines
+            ax.plot([1, 15], [20.7, 20.7], color='blue', linewidth=0.5)
+            ax.plot([1, 15], [0.2, 0.2], color='green', linewidth=0.5)
+            ax.set_ylim(-5, 25); ax.set_xlim(0, 16); ax.axis('off')
+
         st.pyplot(fig)
+        pdf_io, dxf_io = io.BytesIO(), io.StringIO()
+        fig.savefig(pdf_io, format='pdf', bbox_inches='tight')
+        export_ax_to_dxf(ax).write(dxf_io)
+        st.success("✅ Generation Complete!")
