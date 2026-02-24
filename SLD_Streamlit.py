@@ -602,66 +602,38 @@ if st.button("Generate AutoCAD DXF", type="primary"):
 
             def middle_common_15(ax, x_offset, y_offset, feeder_num, fs, i):
     L = get_labels_15(feeder_num, i)
-    # Define the center of the Tie Breaker as the symmetry reference point
+    # Define the absolute center point of the Tie Breaker for symmetry
     cb_center_y = y_offset - 2.5 
     
-    # 1. TIE BREAKER (Reference Center)
+    # 1. TIE BREAKER (The Reference Center)
     draw_breaker(ax, x_offset+0.25, y_offset-2.5, L["breaker_lbl"], fs)
     
-    # --- TOP HALF (Symmetrical Upwards from CB Center) ---
-    # ACT: +1.3 units from center
+    # --- TOP HALF (Symmetrical Upwards) ---
+    # Top CT (ACT)
     ct_a_lbl = L["ct_lbl"].replace("CT", "ACT")
     draw_ct(ax, x_offset+0.25, cb_center_y + 1.3, ct_a_lbl, fs)  
     
-    # Top Earth Switch: +2.6 units from center
+    # Top Earth Switch
     earth_sh(ax, x_offset+.25, cb_center_y + 2.6, L["earth_lbl1"], fs)
     
-    # Top Isolator: +3.1 units from center
+    # Top Isolator
     draw_isolator(ax, x_offset+.25, cb_center_y + 3.1, L["base_isolator"], fs)
     
-    # --- BOTTOM HALF (Symmetrical Downwards from CB Center) ---
-    # BCT: -1.3 units from center
+    # --- BOTTOM HALF (Symmetrical Downwards) ---
+    # Bottom CT (BCT)
     ct_b_lbl = L["ct_lbl"].replace("CT", "BCT")
     draw_ct(ax, x_offset+0.25, cb_center_y - 1.3, ct_b_lbl, fs)  
     
-    # Bottom Earth Switch: -2.6 units from center
+    # Bottom Earth Switch (Mirrored position)
     earth_sh(ax, x_offset+0.25, cb_center_y - 2.6, L["earth_lbl2"], fs)
     
-    # Bottom Isolator: -3.1 units from center
+    # Bottom Isolator (Mirrored position)
     draw_isolator(ax, x_offset+0.25, cb_center_y - 3.1, L["base_isolatorb"], fs)
     
-    # --- CONNECTING WIRE ---
+    # --- UNIFORM CONNECTING WIRE ---
     # Draw a single continuous line from top isolator to bottom isolator
     ax.plot([x_offset+0.25, x_offset+0.25], [cb_center_y + 3.1, cb_center_y - 3.1], color='red', linewidth=0.5)
     draw_name(ax, x_offset-0.5, y_offset-2.5, L["symbol_lbl"], fs)
-            def grid_draw_feeder1(ax, x_offset, y_offset, feeder_num, fs, i):
-                L, n = get_labels_15(feeder_num, i), i+1
-                if (n - 1) % 3 == 0:
-                    common_15(ax, x_offset, y_offset, feeder_num, fs, i)
-                    ax.plot([x_offset+0.25, x_offset+0.25], [y_offset+.9, y_offset+.4], color='red', linewidth=0.5)
-                    ax.plot([x_offset+.25, x_offset+.75], [y_offset-5.8, y_offset-5.8], color='red', linewidth=0.5)
-                    ax.plot([x_offset+.75, x_offset+.75], [y_offset-5.8, y_offset+6.3], color='red', linewidth=0.5)
-                    draw_isolator(ax, x_offset+0.75,y_offset+2 , L["iso_lbl2"], fs)
-                    earth_sh(ax, x_offset+0.75, y_offset+3, L["earth_lbl3"], fs)
-                    draw_wt(ax, x_offset+.75, y_offset+3.2, L["wt_lbl"], fs)
-                    draw_cvt(ax, x_offset+.75, y_offset+5, L["cvt_lbl"], fs)
-                    draw_la(ax, x_offset+.75, y_offset+5.2, L["la_lbl"], fs)
-                    la_comp(ax, x_offset+.3, y_offset+5)
-                    draw_symbol_upp(ax, x_offset+.75, y_offset+6.4, L["symbol_lbl"], fs)
-                elif (n - 2) % 3 == 0: 
-                    middle_common_15(ax, x_offset, y_offset, feeder_num, fs, i)
-                elif (n - 3) % 3 == 0:
-                    common_15(ax, x_offset, y_offset, feeder_num, fs, i)
-                    ax.plot([x_offset+0.25, x_offset+0.25], [y_offset-5.8, y_offset-6.4], color='red', linewidth=0.5)
-                    ax.plot([x_offset+.25, x_offset+.75], [y_offset+.5, y_offset+.5], color='red', linewidth=0.5)
-                    ax.plot([x_offset+.75, x_offset+.75], [y_offset+.5, y_offset-11], color='red', linewidth=0.5)
-                    draw_isolator(ax, x_offset+0.75, y_offset-7, L["iso_lbl2"], fs)
-                    earth_sh(ax, x_offset+0.75, y_offset-7.3, L["earth_lbl3"], fs)
-                    draw_wt(ax, x_offset+.75, y_offset-8.6, L["wt_lbl"], fs)
-                    draw_cvt(ax, x_offset+.75, y_offset-8.7, L["cvt_lbl"], fs)
-                    draw_la(ax, x_offset+.75, y_offset-10, L["la_lbl"], fs)
-                    la_comp(ax, x_offset+.3, y_offset-10.2)
-                    draw_symbol(ax, x_offset+.75, y_offset-11.1, L["symbol_lbl"], fs)
 
             def grid_draw_feeder2(ax, x_offset, y_offset, feeder_num, fs, i):
                 L, n = get_labels_15(feeder_num, i), i+1
