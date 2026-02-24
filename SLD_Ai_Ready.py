@@ -146,10 +146,10 @@ with st.container():
                     }
                     """
                     model = genai.GenerativeModel(
-                        'gemini-1.5-pro',
-                        system_instruction=system_instruction,
-                        generation_config={"response_mime_type": "application/json"}
-                    )
+    'gemini-1.5-flash', 
+    system_instruction=system_instruction,
+    generation_config={"response_mime_type": "application/json"}
+)
                     
                     response = model.generate_content(ai_prompt)
                     ai_data = json.loads(response.text)
