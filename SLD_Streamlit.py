@@ -620,9 +620,9 @@ if st.button("Generate AutoCAD DXF", type="primary"):
                 draw_ct(ax, x_offset+0.25, y_offset-3.8, ct_b_lbl, fs)  
                 
                 # Lower Earth Switch
-                earth_sh(ax, x_offset+0.25, y_offset-4.8, L["earth_lbl2"], fs)
+                earth_sh(ax, x_offset+0.25, y_offset-4.0, L["earth_lbl2"], fs)
                 # Lower Isolator
-                draw_isolator(ax, x_offset+0.25, y_offset-5.5, L["base_isolatorb"], fs)
+                draw_isolator(ax, x_offset+0.25, y_offset-5.0, L["base_isolatorb"], fs)
                 
                 # Continuous connecting wire
                 ax.plot([x_offset+0.25, x_offset+0.25], [y_offset+0.6, y_offset-5.2], color='red', linewidth=0.5)
