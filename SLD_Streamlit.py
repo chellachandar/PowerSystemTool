@@ -311,15 +311,9 @@ if st.button("Generate AutoCAD DXF", type="primary"):
         # =========================================================================
         if b6 in ["Double Main Transfer Bus", "Double Main Bus"]:
             
-            # --- DYNAMIC PAPER SIZING & SCALING (DM) ---
-            plot_width = num_feeders * 2 + 6
-            if plot_width <= 11.69: paper_size = (11.69, 8.27) # A4
-            elif plot_width <= 16.54: paper_size = (16.54, 11.69) # A3
-            elif plot_width <= 23.39: paper_size = (23.39, 16.54) # A2
-            else: paper_size = (33.11, 23.39) # A1
-            
-            fig, ax = plt.subplots(figsize=paper_size)
-            ax.set_aspect('equal', adjustable='datalim') # PERFECT GEOMETRY SCALING
+            # --- REVERTED DYNAMIC WIDTH SIZING (NO ASPECT RATIO LOCK) ---
+            fig_width = max(12, num_feeders * 2)
+            fig, ax = plt.subplots(figsize=(fig_width, 6))
             
             x_start = 5
             y_start = 8.2
@@ -556,17 +550,10 @@ if st.button("Generate AutoCAD DXF", type="primary"):
         # =========================================================================
         else:
             
-            # --- DYNAMIC PAPER SIZING & SCALING (1.5 CB) ---
+            # --- REVERTED DYNAMIC WIDTH SIZING (NO ASPECT RATIO LOCK) ---
             num_cols = math.ceil(num_feeders / 3.0)
-            plot_width = num_cols * 3 + 10
-            
-            if plot_width <= 11.69: paper_size = (11.69, 8.27) # A4
-            elif plot_width <= 16.54: paper_size = (16.54, 11.69) # A3
-            elif plot_width <= 23.39: paper_size = (23.39, 16.54) # A2
-            else: paper_size = (33.11, 23.39) # A1
-            
-            fig, ax = plt.subplots(figsize=paper_size)
-            ax.set_aspect('equal', adjustable='datalim') # PERFECT GEOMETRY SCALING
+            fig_width = max(12, num_cols * 4) 
+            fig, ax = plt.subplots(figsize=(fig_width, 18))
 
             x_start = 5
             y_start = 19.8
@@ -809,5 +796,5 @@ if st.button("Generate AutoCAD DXF", type="primary"):
 
         st.success("✅ Generation Complete!")
         col1, col2 = st.columns(2)
-        with col1: st.download_button("📥 Download PDF (A4/A3/A2 Format)", data=pdf_io.getvalue(), file_name="Substation_SLD.pdf", mime="application/pdf")
+        with col1: st.download_button("📥 Download PDF", data=pdf_io.getvalue(), file_name="Substation_SLD.pdf", mime="application/pdf")
         with col2: st.download_button("📥 Download AutoCAD DXF", data=dxf_io.getvalue(), file_name="Substation_SLD.dxf", mime="application/dxf")
