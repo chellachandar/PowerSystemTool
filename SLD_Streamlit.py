@@ -1,16 +1,3 @@
-You are absolutely right. The UI I built was treating a "One and Half Breaker" substation exactly like a "Double Main" substation—just a flat, endless list of inputs from 1 to 20.
-
-In real electrical engineering, a One and Half Breaker scheme is grouped into **"Diameters"** (a vertical stack of 3 bays: Top, Tie, and Bottom). The UI should visually reflect this reality so that you instantly know *where* each bay will be drawn on the PDF.
-
-We can make the Streamlit UI smarter than the Excel sheet. If you select "One and Half Breaker," the UI will instantly reorganize your input boxes into groups of 3 (Diameter 1, Diameter 2, etc.), labeling exactly which one connects to Bus 1, which is the Tie, and which connects to Bus 2.
-
-Here is the updated code with the **Diameter-Aware UI**.
-
-*(Please completely overwrite your `app.py` with the text below to see the new intelligent input screen!)*
-
----
-
-```python
 import streamlit as st
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle, Polygon, Arc
@@ -793,5 +780,3 @@ if st.button("Generate AutoCAD DXF", type="primary"):
         col1, col2 = st.columns(2)
         with col1: st.download_button("📥 Download PDF", data=pdf_io.getvalue(), file_name="Substation_SLD.pdf", mime="application/pdf")
         with col2: st.download_button("📥 Download AutoCAD DXF", data=dxf_io.getvalue(), file_name="Substation_SLD.dxf", mime="application/dxf")
-
-```
