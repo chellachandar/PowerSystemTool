@@ -93,8 +93,8 @@ st.title("⚡ Intelligent Substation SLD Generator")
 
 with st.sidebar:
     st.header("1. Global Parameters")
-    b8 = st.text_input("Project Title", value="", placeholder="e.g. POWERGRID CORPORATION")
-    b9 = st.text_input("Subtitle / Station Name", value="", placeholder="e.g. YELAHANKA SS")
+    b8 = st.text_input("Project Title", value="TamilNadu Electricity Board")
+    b9 = st.text_input("Subtitle / Station Name", value="400kV Substation")
     b12 = st.number_input("Voltage (kV)", value=400, step=11)
     b6 = st.selectbox("Bus Configuration", ["One and Half Breaker", "Double Main Bus", "Double Main Transfer Bus"])
     
@@ -102,21 +102,17 @@ with st.sidebar:
     st.header("2. Station Size")
     num_feeders = int(st.number_input("Enter total number of Bays:", min_value=1, value=6, step=1))
     
-    if b6 == "One and Half Breaker":
-        st.write("Specify Custom Tie Bay Logic Locations (if any):")
-        d6 = st.number_input("Tie Bay 1 (Index)", min_value=1, max_value=num_feeders, value=min(12, num_feeders))
-        d7 = st.number_input("Tie Bay 2 (Index)", min_value=1, max_value=num_feeders, value=min(13, num_feeders))
-    else:
-        d6, d7 = None, None
+    # Internal variables, removed from UI to prevent confusion
+    d6, d7 = -1, -1 
 
 # --- DYNAMIC BAY GENERATION (DIAMETER AWARE) ---
 st.subheader(f"Configure {num_feeders} Bays")
 feeder_types = []
 feeder_names = []
-bay_options = ["Line_Bay", "ICT", "Bus_Coupler", "Reactor", "Future_Bay", "Transfer_Bus_coupler", "Cable Feeder", "No_bay"]
+bay_options = ["Line_Bay", "ICT", "Bus_Coupler", "Reactor", "Future_Bay", "Transfer_Bus_coupler", "Cable Feeder", "Tie_Breaker", "No_bay"]
 
 if b6 == "One and Half Breaker":
-    st.info("💡 **One and a Half Breaker Scheme Detected:** Grouping inputs into visual Diameters (Top, Tie, Bottom).")
+    st.info("💡 **One and a Half Breaker Scheme:** Middle bays are defaulted to 'Tie_Breaker'. Select 'No_bay' to leave a blank wire.")
     
     num_diameters = math.ceil(num_feeders / 3)
     
@@ -129,14 +125,20 @@ if b6 == "One and Half Breaker":
                 idx = d * 3 + j
                 if idx < num_feeders:
                     with cols[j]:
-                        # Assign labels to show exactly where this goes on the diagram
-                        if j == 0: position_label = "🔼 Top (Main Bus 1)"
-                        elif j == 1: position_label = "↔️ Middle (Tie Bay)"
-                        else: position_label = "🔽 Bottom (Main Bus 2)"
+                        if j == 0: 
+                            position_label = "🔼 Top (Main Bus 1)"
+                            default_idx = 0 # Line Bay
+                        elif j == 1: 
+                            position_label = "↔️ Middle (Tie Bay)"
+                            default_idx = bay_options.index("Tie_Breaker") # AUTO-SELECT TIE BREAKER
+                        else: 
+                            position_label = "🔽 Bottom (Main Bus 2)"
+                            default_idx = 0 # Line Bay
                             
                         st.markdown(f"**Bay {idx+1}: {position_label}**")
-                        ftype = st.selectbox(f"Type", bay_options, key=f"type_{idx}")
-                        fname = st.text_input(f"Name", value="", placeholder=f"Bay {idx+1}", key=f"name_{idx}")
+                        ftype = st.selectbox(f"Type", bay_options, index=default_idx, key=f"type_{idx}")
+                        # USER REQUESTED DEFAULT BAY NAMES
+                        fname = st.text_input(f"Name", value=f"Bay no {idx+1}", key=f"name_{idx}")
                         feeder_types.append(ftype)
                         feeder_names.append(fname)
         st.write("---")
@@ -147,8 +149,9 @@ else:
     for i in range(num_feeders):
         with cols[i % 4]:
             st.markdown(f"**Bay {i+1}**")
-            ftype = st.selectbox(f"Type", bay_options, key=f"type_{i}")
-            fname = st.text_input(f"Name", value="", placeholder=f"Name for Bay {i+1}", key=f"name_{i}")
+            ftype = st.selectbox(f"Type", bay_options, index=0, key=f"type_{i}")
+            # USER REQUESTED DEFAULT BAY NAMES
+            fname = st.text_input(f"Name", value=f"Bay no {i+1}", key=f"name_{i}")
             feeder_types.append(ftype)
             feeder_names.append(fname)
             st.write("---")
@@ -304,10 +307,9 @@ if st.button("Generate AutoCAD DXF", type="primary"):
             ax.plot([x-.025, x+.025], [y+.1, y+.1], color='green', linewidth=0.5)
 
         # =========================================================================
-        # ARCHITECTURE 1: DOUBLE MAIN / TRANSFER BUS (HORIZONTAL LAYOUT)
+        # ARCHITECTURE 1: DOUBLE MAIN / TRANSFER BUS
         # =========================================================================
         if b6 in ["Double Main Transfer Bus", "Double Main Bus"]:
-            
             def get_labels_dm(feeder_num):
                 return {
                     "base_isolator" : f"{b12+feeder_num}89A", "base_isolatorb" : f"{b12+feeder_num}89B", "breaker_lbl" : f"{b12+feeder_num}52",
@@ -505,7 +507,7 @@ if st.button("Generate AutoCAD DXF", type="primary"):
                     ax.plot([1, num_feeders*3], [2.4, 2.4], color='black', linewidth=0.5)
                     ax.text(1.5, 2.4+.5, f"{b12} KV_Transfer BUS", fontsize=fontsize+4,  va='center')
 
-                if f_type == 'Line_Bay': dm_draw_feeder1(ax, x_pos, y_start, feeder_label, fontsize, f_type)
+                if f_type in ['Line_Bay', 'Tie_Breaker']: dm_draw_feeder1(ax, x_pos, y_start, feeder_label, fontsize, f_type)
                 elif f_type == 'ICT' : dm_draw_feeder2(ax, x_pos, y_start, feeder_label, fontsize)
                 elif f_type == 'Reactor' : dm_draw_feeder3(ax, x_pos, y_start, feeder_label, fontsize)
                 elif f_type == 'Transfer_Bus_coupler' : dm_draw_feeder4(ax, x_pos, y_start, feeder_label, fontsize, f_type)
@@ -518,8 +520,7 @@ if st.button("Generate AutoCAD DXF", type="primary"):
                 lines, current_line = [], ""
                 for word in words:
                     if len(current_line + " " + word) <= 24:
-                        if current_line: current_line += " " + word
-                        else: current_line = word
+                        current_line = current_line + " " + word if current_line else word
                     else:
                         lines.append(current_line)
                         current_line = word
@@ -540,34 +541,23 @@ if st.button("Generate AutoCAD DXF", type="primary"):
             ax.set_ylim(-6*1.05,1.5*10.5)
             ax.axis('off')
 
-
         # =========================================================================
-        # ARCHITECTURE 2: ONE AND A HALF BREAKER (GRID LAYOUT)
+        # ARCHITECTURE 2: ONE AND A HALF BREAKER
         # =========================================================================
         else:
             def get_labels_15(feeder_num, i):
                 bay_num = i + 1 
-                earth_label = f"{b12+feeder_num}89AE2" if bay_num in [d6, d7] else f"{b12+feeder_num}89AE"
+                earth_label = f"{b12+feeder_num}89AE"
                 earth_label2 = f"{b12+feeder_num}89AE1" 
                 current_type = feeder_types[i]
 
-                if current_type in ["Line_Bay", "Future_Bay"] and (bay_num % 3 == 1 or bay_num % 3 == 0):
-                    pair_index = i - 2 if bay_num % 3 == 0 else i + 2  
-                    if pair_index < len(feeder_types) and feeder_types[pair_index] in ["Line_Bay", "Future_Bay"]:
-                        ct_label = f"{b12+feeder_num+1}BCT" if (bay_num - 1) % 3 == 0 else f"{b12+feeder_num-1}ACT"
-                    else:
-                        ct_label = f"{b12+feeder_num+1}CT" if (bay_num - 1) % 3 == 0 else f"{b12+feeder_num-1}CT" if bay_num % 3 == 0 else f"{b12+feeder_num}CT"
-                else:
-                    ct_label = f"{b12+feeder_num+1}CT" if (bay_num - 1) % 3 == 0 else f"{b12+feeder_num-1}CT" if bay_num % 3 == 0 else f"{int(b12+feeder_num)}CT"
+                # Branch CT Labels logic (Keeping standard CT naming)
+                ct_label = f"{int(b12+feeder_num)}CT"
 
-                if current_type == "ICT":
-                    iso_lbl2, earth_lbl3 = f"{b12+feeder_num}89T", f"{b12+feeder_num}89TE"
-                elif current_type == "Line_Bay":
-                    iso_lbl2, earth_lbl3 = f"{b12+feeder_num}89L", f"{b12+feeder_num}89LE"
-                elif current_type == "Reactor":
-                    iso_lbl2, earth_lbl3 = f"{b12+feeder_num}89R", f"{b12+feeder_num}89RE"
-                else:
-                    iso_lbl2, earth_lbl3 = f"{b12+feeder_num}89C", f"{b12+feeder_num}89CE"
+                if current_type == "ICT": iso_lbl2, earth_lbl3 = f"{b12+feeder_num}89T", f"{b12+feeder_num}89TE"
+                elif current_type == "Line_Bay": iso_lbl2, earth_lbl3 = f"{b12+feeder_num}89L", f"{b12+feeder_num}89LE"
+                elif current_type == "Reactor": iso_lbl2, earth_lbl3 = f"{b12+feeder_num}89R", f"{b12+feeder_num}89RE"
+                else: iso_lbl2, earth_lbl3 = f"{b12+feeder_num}89C", f"{b12+feeder_num}89CE"
 
                 labels = {
                     "base_isolator": f"{b12+feeder_num}89A", "base_isolatorb": f"{b12+feeder_num}89B", "breaker_lbl": f"{b12+feeder_num}52",
@@ -588,19 +578,24 @@ if st.button("Generate AutoCAD DXF", type="primary"):
                 draw_breaker(ax, x_offset+0.25, y_offset-2.2, L["breaker_lbl"], fs)
                 earth_sh(ax, x_offset+0.25, y_offset-3.6, L["earth_lbl2"], fs)
                 draw_isolator(ax, x_offset+0.25, y_offset-4.6, L["base_isolatorb"], fs)
-                draw_ct(ax, x_offset+0.25, y_offset-3.5, L["ct_lbl"], fs)
+                draw_ct(ax, x_offset+0.25, y_offset-3.5, L["ct_lbl"], fs) # STANDARD 1 CT FOR TOP/BOTTOM BAYS
                 ax.plot([x_offset+0.25, x_offset+0.25], [y_offset-3.2, y_offset-4.6+.2], color='red', linewidth=0.5)
                 draw_name(ax, x_offset-0.5, y_offset-3,L["symbol_lbl"], fs)
-                n=i+1
-                if n == d6 and (n - 1) % 3 == 0: earth_sh(ax, x_offset+.25, y_offset+1.1, L["earth_lbl_BUS"], fs)
-                if n == d7 and (n - 3) % 3 == 0: earth_sh(ax, x_offset+.25, y_offset-4.9, L["earth_lbl_BUS"], fs)
 
             def middle_common_15(ax, x_offset, y_offset, feeder_num, fs, i):
                 L = get_labels_15(feeder_num, i)
                 draw_isolator(ax, x_offset+.25, y_offset+1.1-.5,L["base_isolator"], fs)
                 earth_sh(ax, x_offset+.25, y_offset+.6-.5, L["earth_lbl1"], fs)
                 ax.plot([x_offset+0.25, x_offset+0.25], [y_offset-.15-.4, y_offset-.5-1.5], color='red', linewidth=0.5)
+                
+                # --- VALIDATED FIX: DUAL CT FOR TIE BAY ---
+                ct_a_lbl = L["ct_lbl"].replace("CT", "ACT")
+                ct_b_lbl = L["ct_lbl"].replace("CT", "BCT")
+                draw_ct(ax, x_offset+0.25, y_offset-2.4, ct_a_lbl, fs)  # TOP CT in Tie
                 draw_breaker(ax, x_offset+0.25, y_offset-2.2-.3-.5, L["breaker_lbl"], fs)
+                draw_ct(ax, x_offset+0.25, y_offset-3.6, ct_b_lbl, fs)  # BOTTOM CT in Tie
+                # ------------------------------------------
+
                 earth_sh(ax, x_offset+0.25, y_offset-3.6-.1-.5, L["earth_lbl2"], fs)
                 draw_isolator(ax, x_offset+0.25, y_offset-4.6-.1-.5, L["base_isolatorb"], fs)
                 ax.plot([x_offset+0.25, x_offset+0.25], [y_offset-3.2-.8, y_offset-4.6-.6], color='red', linewidth=0.5)
@@ -620,7 +615,7 @@ if st.button("Generate AutoCAD DXF", type="primary"):
                     draw_la(ax, x_offset+.75, y_offset+5.2, L["la_lbl"], fs)
                     la_comp(ax, x_offset+.3, y_offset+5)
                     draw_symbol_upp(ax, x_offset+.75, y_offset+6.4, L["symbol_lbl"], fs)
-                    draw_ct(ax, x_offset+0.25, y_offset-10.9, L["ct_lbl_middle"], fs)
+                    # Removed redundant line branch CT here to keep clean architecture
                 elif (n - 2) % 3 == 0: middle_common_15(ax, x_offset, y_offset, feeder_num, fs, i)
                 elif (n - 3) % 3 == 0:
                     common_15(ax, x_offset, y_offset, feeder_num, fs, i)
@@ -634,7 +629,7 @@ if st.button("Generate AutoCAD DXF", type="primary"):
                     draw_la(ax, x_offset+.75, y_offset-10, L["la_lbl"], fs)
                     la_comp(ax, x_offset+.3, y_offset-10.2)
                     draw_symbol(ax, x_offset+.75, y_offset-11.1, L["symbol_lbl"], fs)
-                    draw_ct(ax, x_offset+0.25, y_offset+5, L["ct_lbl_middle"], fs)
+                    # Removed redundant line branch CT here to keep clean architecture
 
             def grid_draw_feeder2(ax, x_offset, y_offset, feeder_num, fs, i):
                 L, n = get_labels_15(feeder_num, i), i+1
@@ -696,7 +691,6 @@ if st.button("Generate AutoCAD DXF", type="primary"):
                     earth_sh(ax, x_offset+.25, y_offset-.5, L["earth_lbl1"], fs)
                     ax.plot([x_offset+0.25, x_offset+0.25], [y_offset-1, y_offset-5.95], color='red', linewidth=0.5)
                     draw_name(ax, x_offset-0.5, y_offset-3,L["symbol_lbl"], fs)
-                    draw_ct(ax, x_offset+0.25, y_offset-10.9, L["ct_lbl_middle"], fs)
                 elif (n - 2) % 3 == 0: middle_common_15(ax, x_offset, y_offset, feeder_num, fs, i)
                 elif (n - 3) % 3 == 0:
                     ax.plot([x_offset+0.25, x_offset+0.25], [y_offset-5.8, y_offset-6.4], color='red', linewidth=0.5)
@@ -704,14 +698,17 @@ if st.button("Generate AutoCAD DXF", type="primary"):
                     draw_isolator(ax, x_offset+0.25, y_offset-4.6, L["base_isolatorb"], fs)
                     ax.plot([x_offset+0.25, x_offset+0.25], [y_offset+.45, y_offset-4.6], color='red', linewidth=0.5)
                     draw_name(ax, x_offset-0.5, y_offset-3,L["symbol_lbl"], fs)
-                    draw_ct(ax, x_offset+0.25, y_offset+5, L["ct_lbl_middle"], fs)
 
             def grid_draw_feeder5(ax, x_offset, y_offset, feeder_num, fs, i):
                 L, n = get_labels_15(feeder_num, i), i+1
                 if (n - 1) % 3 == 0: 
                     ax.plot([x_offset+0.25, x_offset+0.25], [y_offset+.9, y_offset-6], color='red', linewidth=0.5)
                     draw_name(ax, x_offset-0.5, y_offset-3,L["symbol_lbl"], fs)
-                elif (n - 2) % 3 == 0: middle_common_15(ax, x_offset, y_offset, feeder_num, fs, i)
+                elif (n - 2) % 3 == 0: 
+                    # --- VALIDATED FIX: TRUE 'NO_BAY' BYPASS ---
+                    # Draws a pure connecting wire ignoring all Tie equipment.
+                    ax.plot([x_offset+0.25, x_offset+0.25], [y_offset+1.1, y_offset-4.6], color='red', linewidth=0.5)
+                    draw_name(ax, x_offset-0.5, y_offset-3,L["symbol_lbl"], fs)
                 elif (n - 3) % 3 == 0:
                     ax.plot([x_offset+0.25, x_offset+0.25], [y_offset+.5, y_offset-6.4], color='red', linewidth=0.5)
                     draw_name(ax, x_offset-0.5, y_offset-3,L["symbol_lbl"], fs)
@@ -734,7 +731,7 @@ if st.button("Generate AutoCAD DXF", type="primary"):
                 y_pos = y_start - row * y_gap       
                 feeder_label = i + 1
 
-                if f_type == 'Line_Bay': grid_draw_feeder1(ax, x_pos, y_pos, feeder_label, fontsize, i)
+                if f_type in ['Line_Bay', 'Tie_Breaker']: grid_draw_feeder1(ax, x_pos, y_pos, feeder_label, fontsize, i)
                 elif f_type == 'ICT': grid_draw_feeder2(ax, x_pos, y_pos, feeder_label, fontsize, i)
                 elif f_type == 'Reactor': grid_draw_feeder3(ax, x_pos, y_pos, feeder_label, fontsize, i)
                 elif f_type == 'Future_Bay': grid_draw_feeder4(ax, x_pos, y_pos, feeder_label, fontsize, i)
@@ -769,7 +766,7 @@ if st.button("Generate AutoCAD DXF", type="primary"):
             ax.axis('off')
 
         # =========================================================================
-        # RENDER AND EXPORT (Executes for both architectures)
+        # RENDER AND EXPORT 
         # =========================================================================
         st.pyplot(fig)
         pdf_io, dxf_io = io.BytesIO(), io.StringIO()
