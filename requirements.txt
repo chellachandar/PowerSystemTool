@@ -9,3 +9,4 @@ ezdxf
 openpyxl
 docx
 python-docx
+google-generativeai
