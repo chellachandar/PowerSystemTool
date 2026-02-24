@@ -151,8 +151,19 @@ with st.container():
     generation_config={"response_mime_type": "application/json"}
 )
                     
-                    response = model.generate_content(ai_prompt)
-                    ai_data = json.loads(response.text)
+                   response = model.generate_content(ai_prompt)
+                    
+                    # Clean the raw text to strip out Markdown backticks
+                    raw_text = response.text.strip()
+                    if raw_text.startswith("```json"):
+                        raw_text = raw_text[7:]
+                    elif raw_text.startswith("```"):
+                        raw_text = raw_text[3:]
+                    if raw_text.endswith("```"):
+                        raw_text = raw_text[:-3]
+                        
+                    raw_text = raw_text.strip()
+                    ai_data = json.loads(raw_text)
                     
                     # Update Session State with AI Data Bridge
                     st.session_state.b8 = ai_data.get("b8", "Generated Project")
