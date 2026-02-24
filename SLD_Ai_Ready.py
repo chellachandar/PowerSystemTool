@@ -146,7 +146,7 @@ with st.container():
                     }
                     """
                     model = genai.GenerativeModel(
-    'gemini-1.5-flash', 
+    'gemini-2.5-flash', # <-- Updated to the current live model
     system_instruction=system_instruction,
     generation_config={"response_mime_type": "application/json"}
 )
