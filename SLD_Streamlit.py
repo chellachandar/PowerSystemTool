@@ -1,3 +1,16 @@
+You are absolutely right. The UI I built was treating a "One and Half Breaker" substation exactly like a "Double Main" substation—just a flat, endless list of inputs from 1 to 20.
+
+In real electrical engineering, a One and Half Breaker scheme is grouped into **"Diameters"** (a vertical stack of 3 bays: Top, Tie, and Bottom). The UI should visually reflect this reality so that you instantly know *where* each bay will be drawn on the PDF.
+
+We can make the Streamlit UI smarter than the Excel sheet. If you select "One and Half Breaker," the UI will instantly reorganize your input boxes into groups of 3 (Diameter 1, Diameter 2, etc.), labeling exactly which one connects to Bus 1, which is the Tie, and which connects to Bus 2.
+
+Here is the updated code with the **Diameter-Aware UI**.
+
+*(Please completely overwrite your `app.py` with the text below to see the new intelligent input screen!)*
+
+---
+
+```python
 import streamlit as st
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle, Polygon, Arc
@@ -88,8 +101,8 @@ def export_ax_to_dxf(ax):
 
 
 # --- DIRECT UI APPLICATION ---
-st.set_page_config(page_title="Dynamic SLD Generator", layout="wide")
-st.title("⚡ Dynamic Substation SLD Generator")
+st.set_page_config(page_title="Intelligent SLD Generator", layout="wide")
+st.title("⚡ Intelligent Substation SLD Generator")
 
 with st.sidebar:
     st.header("1. Global Parameters")
@@ -99,31 +112,59 @@ with st.sidebar:
     b6 = st.selectbox("Bus Configuration", ["One and Half Breaker", "Double Main Bus", "Double Main Transfer Bus"])
     
     st.divider()
-    st.header("2. Station Size (Dynamic UI)")
-    num_feeders = st.number_input("Enter the exact number of Bays for this station:", min_value=1, value=5, step=1)
+    st.header("2. Station Size")
+    num_feeders = int(st.number_input("Enter total number of Bays:", min_value=1, value=6, step=1))
     
     if b6 == "One and Half Breaker":
-        st.write("Specify Tie Bay Locations:")
-        d6 = st.number_input("Tie Bay 1 (Index)", min_value=1, max_value=int(num_feeders), value=min(12, int(num_feeders)))
-        d7 = st.number_input("Tie Bay 2 (Index)", min_value=1, max_value=int(num_feeders), value=min(13, int(num_feeders)))
+        st.write("Specify Custom Tie Bay Logic Locations (if any):")
+        d6 = st.number_input("Tie Bay 1 (Index)", min_value=1, max_value=num_feeders, value=min(12, num_feeders))
+        d7 = st.number_input("Tie Bay 2 (Index)", min_value=1, max_value=num_feeders, value=min(13, num_feeders))
     else:
         d6, d7 = None, None
 
-# --- DYNAMIC BAY GENERATION ---
-st.subheader(f"Configure {int(num_feeders)} Bays")
+# --- DYNAMIC BAY GENERATION (DIAMETER AWARE) ---
+st.subheader(f"Configure {num_feeders} Bays")
 feeder_types = []
 feeder_names = []
 bay_options = ["Line_Bay", "ICT", "Bus_Coupler", "Reactor", "Future_Bay", "Transfer_Bus_coupler", "Cable Feeder", "No_bay"]
 
-cols = st.columns(4)
-for i in range(int(num_feeders)):
-    with cols[i % 4]:
-        st.markdown(f"**Bay {i+1}**")
-        ftype = st.selectbox(f"Type", bay_options, key=f"type_{i}")
-        fname = st.text_input(f"Name", value="", placeholder=f"Name for Bay {i+1}", key=f"name_{i}")
-        feeder_types.append(ftype)
-        feeder_names.append(fname)
+if b6 == "One and Half Breaker":
+    st.info("💡 **One and a Half Breaker Scheme Detected:** Grouping inputs into visual Diameters (Top, Tie, Bottom).")
+    
+    num_diameters = math.ceil(num_feeders / 3)
+    
+    for d in range(num_diameters):
+        with st.container():
+            st.markdown(f"#### Diameter {d+1}")
+            cols = st.columns(3)
+            
+            for j in range(3):
+                idx = d * 3 + j
+                if idx < num_feeders:
+                    with cols[j]:
+                        # Assign labels to show exactly where this goes on the diagram
+                        if j == 0: position_label = "🔼 Top (Main Bus 1)"
+                        elif j == 1: position_label = "↔️ Middle (Tie Bay)"
+                        else: position_label = "🔽 Bottom (Main Bus 2)"
+                            
+                        st.markdown(f"**Bay {idx+1}: {position_label}**")
+                        ftype = st.selectbox(f"Type", bay_options, key=f"type_{idx}")
+                        fname = st.text_input(f"Name", value="", placeholder=f"Bay {idx+1}", key=f"name_{idx}")
+                        feeder_types.append(ftype)
+                        feeder_names.append(fname)
         st.write("---")
+
+else:
+    st.info("💡 **Double Main / Transfer Bus Detected:** Arranging bays in a horizontal sequence.")
+    cols = st.columns(4)
+    for i in range(num_feeders):
+        with cols[i % 4]:
+            st.markdown(f"**Bay {i+1}**")
+            ftype = st.selectbox(f"Type", bay_options, key=f"type_{i}")
+            fname = st.text_input(f"Name", value="", placeholder=f"Name for Bay {i+1}", key=f"name_{i}")
+            feeder_types.append(ftype)
+            feeder_names.append(fname)
+            st.write("---")
 
 # --- STRICT VALIDATION & GENERATION ---
 if st.button("Generate AutoCAD DXF", type="primary"):
@@ -132,15 +173,13 @@ if st.button("Generate AutoCAD DXF", type="primary"):
     if not b8.strip(): errors.append("❌ Project Title cannot be blank.")
     if not b9.strip(): errors.append("❌ Subtitle cannot be blank.")
     empty_bays = [str(i+1) for i, name in enumerate(feeder_names) if not name.strip()]
-    if empty_bays: errors.append(f"❌ Missing names in Bays: {', '.join(empty_bays)}. All configured bays must have a name.")
-    if b6 == "One and Half Breaker" and (d6 > num_feeders or d7 > num_feeders):
-        errors.append(f"❌ Tie Bay indices cannot exceed total bays.")
+    if empty_bays: errors.append(f"❌ Missing names in Bays: {', '.join(empty_bays)}.")
 
     if errors:
         for error in errors: st.error(error)
         st.stop() 
 
-    with st.spinner(f"Drafting {int(num_feeders)}-Bay Diagram..."):
+    with st.spinner(f"Drafting Diagram..."):
         
         # --- DATA SANITIZATION ---
         for i in range(len(feeder_types)):
@@ -458,26 +497,25 @@ if st.button("Generate AutoCAD DXF", type="primary"):
                 L = get_labels_dm(feeder_num)
                 draw_name(ax, x_offset+0.25, y_offset+1.75, L["No_bay_lbl"], fs)
 
-            num_feeders_int = int(num_feeders)
-            fig_width = max(12, num_feeders_int * 2)
+            fig_width = max(12, num_feeders * 2)
             fig, ax = plt.subplots(figsize=(fig_width, 6))
             x_start = 5
             y_start = 8.2
             gap = 2
-            fontsize = 4 if num_feeders_int > 3 else 3
+            fontsize = 4 if num_feeders > 3 else 3
 
-            for i in range(num_feeders_int):
+            for i in range(num_feeders):
                 f_type = feeder_types[i]
                 f_name = feeder_names[i]
                 x_pos = x_start + i * gap
                 feeder_label = i + 1
 
-                ax.plot([1, num_feeders_int*3], [10, 10], color='blue', linewidth=0.5)
+                ax.plot([1, num_feeders*3], [10, 10], color='blue', linewidth=0.5)
                 ax.text(1.5, 10.5, f"{b12} KV_BUS1", fontsize=fontsize+4,  va='center')
-                ax.plot([1, num_feeders_int*3], [9, 9], color='green', linewidth=0.5)
+                ax.plot([1, num_feeders*3], [9, 9], color='green', linewidth=0.5)
                 ax.text(1.5, 9.5, f"{b12} KV_BUS2", fontsize=fontsize+4,  va='center')
                 if b6=="Double Main Transfer Bus":
-                    ax.plot([1, num_feeders_int*3], [2.4, 2.4], color='black', linewidth=0.5)
+                    ax.plot([1, num_feeders*3], [2.4, 2.4], color='black', linewidth=0.5)
                     ax.text(1.5, 2.4+.5, f"{b12} KV_Transfer BUS", fontsize=fontsize+4,  va='center')
 
                 if f_type == 'Line_Bay': dm_draw_feeder1(ax, x_pos, y_start, feeder_label, fontsize, f_type)
@@ -507,11 +545,11 @@ if st.button("Generate AutoCAD DXF", type="primary"):
                 elif b6=="Double Main Bus":
                     ax.text(x_pos+.25, y_start-11.25, full_text, ha='center', va='top', fontsize=fontsize+1)
 
-            center_x = (x_start + (num_feeders_int-1)*gap)/2
+            center_x = (x_start + (num_feeders-1)*gap)/2
             ax.text(center_x, 14, b8, fontsize=fontsize+25, va='center', ha='center')  
             ax.text(center_x, 12, b9, fontsize=fontsize+15, va='center', ha='center')  
 
-            ax.set_xlim(1,(num_feeders_int)*2+6)
+            ax.set_xlim(1,(num_feeders)*2+6)
             ax.set_ylim(-6*1.05,1.5*10.5)
             ax.axis('off')
 
@@ -691,17 +729,16 @@ if st.button("Generate AutoCAD DXF", type="primary"):
                     ax.plot([x_offset+0.25, x_offset+0.25], [y_offset+.5, y_offset-6.4], color='red', linewidth=0.5)
                     draw_name(ax, x_offset-0.5, y_offset-3,L["symbol_lbl"], fs)
 
-            num_feeders_int = int(num_feeders)
-            fig_width = max(12, num_feeders_int/4 * 6)
+            fig_width = max(12, num_feeders/4 * 6)
             fig, ax = plt.subplots(figsize=(fig_width, 18))
             x_start, y_start, gap = 5, 19.8, 3
             fontsize = 4
             feeders_per_column, y_gap, x_gap = 3, 6.8, gap
 
-            ax.plot([1, num_feeders_int*2], [20.7,20.7], color='blue', linewidth=0.5)
-            ax.plot([1, num_feeders_int*2], [-.2,-.2], color='green', linewidth=0.5)
+            ax.plot([1, num_feeders*2], [20.7,20.7], color='blue', linewidth=0.5)
+            ax.plot([1, num_feeders*2], [-.2,-.2], color='green', linewidth=0.5)
 
-            for i in range(num_feeders_int):
+            for i in range(num_feeders):
                 f_type = feeder_types[i]
                 f_name = feeder_names[i]
                 col = i // feeders_per_column       
@@ -734,13 +771,13 @@ if st.button("Generate AutoCAD DXF", type="primary"):
                 if y_label_pos is not None:
                     ax.text(x_pos+.75, y_label_pos, full_text, ha='center', va='top', fontsize=fontsize+1)
             
-            center_x = (x_start + (num_feeders_int/3)*gap)/2
+            center_x = (x_start + (num_feeders/3)*gap)/2
             ax.text(1.5, 21.1, f"{b12} KV_BUS1", fontsize=fontsize+4, va='center')
             ax.text(1.5, .1, f"{b12} KV_BUS2", fontsize=fontsize+4, va='center')
             ax.text(center_x, 32, b8, fontsize=fontsize+25, va='center', ha='center')  
             ax.text(center_x, 30, b9, fontsize=fontsize+15, va='center', ha='center')  
 
-            ax.set_xlim(0, x_start + num_feeders_int/3 * gap + x_start)
+            ax.set_xlim(0, x_start + num_feeders/3 * gap + x_start)
             ax.set_ylim(-10,35)  
             ax.axis('off')
 
@@ -756,3 +793,5 @@ if st.button("Generate AutoCAD DXF", type="primary"):
         col1, col2 = st.columns(2)
         with col1: st.download_button("📥 Download PDF", data=pdf_io.getvalue(), file_name="Substation_SLD.pdf", mime="application/pdf")
         with col2: st.download_button("📥 Download AutoCAD DXF", data=dxf_io.getvalue(), file_name="Substation_SLD.dxf", mime="application/dxf")
+
+```
