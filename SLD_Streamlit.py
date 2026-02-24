@@ -7,7 +7,7 @@ import math
 import ezdxf
 from ezdxf.enums import TextEntityAlignment
 
-# --- GEOMETRICALLY PERFECT DXF ENGINE ---
+# --- GEOMETRICALLY PERFECT DXF ENGINE (UNCHANGED) ---
 def export_ax_to_dxf(ax):
     doc = ezdxf.new('R2010')
     msp = doc.modelspace()
@@ -107,11 +107,12 @@ st.subheader(f"Configure {num_feeders} Bays")
 feeder_types = []
 feeder_names = []
 
+# Domain-specific options
 bay_options_dm = ["Line_Bay", "ICT", "Bus_Coupler", "Reactor", "Future_Bay", "Transfer_Bus_coupler", "Cable Feeder", "No_bay"]
 bay_options_15 = ["Line_Bay", "ICT", "Reactor", "Future_Bay", "Cable Feeder", "Tie_Breaker", "No_bay"]
 
 if b6 == "One and Half Breaker":
-    st.info("💡 **One and a Half Breaker Scheme:** Middle bays are strictly locked to 'Tie_Breaker'.")
+    st.info("💡 **One and a Half Breaker Scheme:** Middle bays are strictly locked to 'Tie_Breaker' to prevent architectural errors.")
     num_diameters = math.ceil(num_feeders / 3)
     
     for d in range(num_diameters):
@@ -125,15 +126,15 @@ if b6 == "One and Half Breaker":
                     with cols[j]:
                         if j == 0: 
                             position_label = "🔼 Top (Main Bus 1)"
-                            default_idx = 0 
+                            default_idx = 0 # Line Bay
                             is_disabled = False
                         elif j == 1: 
                             position_label = "↔️ Middle (Tie Bay)"
                             default_idx = bay_options_15.index("Tie_Breaker") 
-                            is_disabled = True 
+                            is_disabled = True # STRICTLY LOCK THE TIE BAY TO AVOID ERRORS
                         else: 
                             position_label = "🔽 Bottom (Main Bus 2)"
-                            default_idx = 0 
+                            default_idx = 0 # Line Bay
                             is_disabled = False
                             
                         st.markdown(f"**Bay {idx+1}: {position_label}**")
@@ -144,7 +145,7 @@ if b6 == "One and Half Breaker":
         st.write("---")
 
 else:
-    st.info("💡 **Double Main / Transfer Bus Detected:** Horizontal bays.")
+    st.info("💡 **Double Main / Transfer Bus Detected:** Arranging bays in a horizontal sequence.")
     cols = st.columns(4)
     for i in range(num_feeders):
         with cols[i % 4]:
@@ -155,9 +156,19 @@ else:
             feeder_names.append(fname)
             st.write("---")
 
-# --- GENERATION ---
+# --- STRICT VALIDATION & GENERATION ---
 if st.button("Generate AutoCAD DXF", type="primary"):
     
+    errors = []
+    if not b8.strip(): errors.append("❌ Project Title cannot be blank.")
+    if not b9.strip(): errors.append("❌ Subtitle cannot be blank.")
+    empty_bays = [str(i+1) for i, name in enumerate(feeder_names) if not name.strip()]
+    if empty_bays: errors.append(f"❌ Missing names in Bays: {', '.join(empty_bays)}.")
+
+    if errors:
+        for error in errors: st.error(error)
+        st.stop() 
+
     with st.spinner(f"Drafting Standards-Compliant Diagram..."):
         
         # --- DATA SANITIZATION ---
@@ -169,101 +180,621 @@ if st.button("Generate AutoCAD DXF", type="primary"):
                 if feeder_types[i] in ["", "Cable Feeder"]: 
                     feeder_types[i] = "Line_Bay"
 
-        # --- DRAFTING FUNCTIONS ---
+        # --- SHARED DRAFTING FUNCTIONS ---
         def draw_breaker(ax, x, y, label, fs):
             ax.add_patch(Rectangle((x-0.1, y-0.2), 0.2, 0.4, fill=False, edgecolor='black', linewidth=0.5))
             ax.plot([x, x], [y+.2, y+1], color='red', linewidth=0.5)
             ax.plot([x, x], [y-.2, y-1], color='red', linewidth=0.5)
             ax.text(x+.3, y, label, fontsize=fs, ha='center')
 
+        def draw_breaker_coupler(ax, x, y, label, fs):
+            ax.add_patch(Rectangle((x-0.1, y-0.2), 0.2, 0.4, fill=False, edgecolor='black', linewidth=0.5))
+            ax.plot([x-.45, x-.1], [y, y], color='red', linewidth=0.5)
+            ax.plot([x+.1, x+.45], [y, y], color='red', linewidth=0.5)
+            ax.text(x, y+.5, label, fontsize=fs, ha='center')
+
         def draw_isolator(ax, x, y, label, fs):
-            ax.plot([x, x], [y-.12, y+.4], color='red', linewidth=0.5)
-            ax.text(x+.3, y-.3, label, fontsize=fs, ha='center')
-            ax.add_patch(Arc((x , y-0.15), 0.04, 0.08, angle=0, theta1=0, theta2=360, color='red', linewidth=0.5))
-            ax.add_patch(Arc((x , y-0.65), 0.04, 0.08, angle=0, theta1=0, theta2=360, color='red', linewidth=0.5))
+            if b6 == "Double Main Transfer Bus" :
+                ax.plot([x, x], [y-.12, y+.2], color='red', linewidth=0.5)
+                ax.text(x+.2, y-.2, label, fontsize=fs, ha='center')
+            else:
+                ax.plot([x, x], [y-.12, y+.4], color='red', linewidth=0.5)
+                ax.text(x+.3, y-.3, label, fontsize=fs, ha='center')
+            ax.add_patch(Arc((x , y-0.6/4), 0.04, 0.08, angle=0, theta1=0, theta2=360, color='red', linewidth=0.5))
+            ax.add_patch(Arc((x , y-.5-0.6/4), 0.04, 0.08, angle=0, theta1=0, theta2=360, color='red', linewidth=0.5))
             ax.plot([x-.05, x+.05], [y-.55, y-.25], color='red', linewidth=0.5)
             ax.plot([x, x], [y-.7, y-1.2], color='red', linewidth=0.5)
 
         def earth_sh(ax, x, y, label, fs):
-            y_base = y - 0.2
-            ax.plot([x, x-0.2], [y_base-0.6, y_base-0.6], color='red', linewidth=0.5)
-            ax.plot([x-0.2, x-0.35], [y_base-0.35, y_base-0.6], color='green', linewidth=0.5)
-            ax.plot([x-0.35, x-0.5], [y_base-0.6, y_base-0.6], color='green', linewidth=0.5)
-            ax.text(x-0.4, y_base-0.35, label, fontsize=fs, ha='center')
+            y = y - .2
+            ax.plot([x, x-.2], [y-.6, y-.6], color='red', linewidth=0.5)
+            ax.add_patch(Arc((x-.2 , y-.45-0.6/4), 0.04, 0.08, angle=0, theta1=0, theta2=360, color='red', linewidth=0.5))
+            ax.add_patch(Arc((x-.35 , y-.45-0.6/4), 0.04, 0.08, angle=0, theta1=0, theta2=360, color='green', linewidth=0.5))
+            ax.plot([x-.2, x-.35], [y-.35, y-.6], color='green', linewidth=0.5)
+            ax.plot([x-.35, x-.5], [y-.6, y-.6], color='green', linewidth=0.5)
+            ax.plot([x-.5, x-.5], [y-.45, y-.75], color='green', linewidth=0.5)
+            ax.plot([x-.55, x-.55], [y-.5, y-.7], color='green', linewidth=0.5)
+            ax.plot([x-.6, x-.6], [y-.55, y-.65], color='green', linewidth=0.5)
+            ax.text(x-.4, y-.35, label, fontsize=fs, ha='center')
 
         def draw_ct(ax, x, y, label, fs):
-            ax.add_patch(Arc((x+0.03 , y-0.18), 0.2, 0.4, angle=0, theta1=80, theta2=280, color='blue', linewidth=0.5))
-            ax.add_patch(Arc((x+0.03 , y+0.18), 0.2, 0.4, angle=0, theta1=80, theta2=280, color='blue', linewidth=0.5))
-            ax.text(x-0.3, y, label, fontsize=fs, ha='center')
+            spacing = 0.75
+            ax.add_patch(Arc((x+.03 , y- spacing/4), 0.2, 0.4, angle=0, theta1=80, theta2=280, color='blue', linewidth=0.5))
+            ax.add_patch(Arc((x+.03 , y+ spacing/4), 0.2, 0.4, angle=0, theta1=80, theta2=280, color='blue', linewidth=0.5))
+            ax.text(x-.3, y, label, fontsize=fs, ha='center')
+
+        def draw_wt(ax, x, y, label, fs):
+            ax.add_patch(Arc((x , y-0.6/4), 0.2, 0.4, angle=0, theta1=90, theta2=360, color='red', linewidth=0.5))
+            ax.plot([x, x+.1], [y-.15, y-.15], color='red', linewidth=0.5)
+            ax.text(x-.3, y, label, fontsize=fs, ha='center')
+
+        def draw_cvt(ax, x, y, label, fs):
+            y = y - .2
+            ax.plot([x, x + .15], [y - .6, y - .6], color='red', linewidth=0.5)
+            ax.plot([x + .15, x + .15], [y - .45, y - .75], color='red', linewidth=0.5)
+            ax.plot([x + .2, x + .2], [y - .45, y - .75], color='red', linewidth=0.5)
+            ax.plot([x + .2, x + .55], [y - .6, y - .6], color='red', linewidth=0.5)
+            ax.plot([x + .55, x + .55], [y - .45, y - .75], color='red', linewidth=0.5)
+            ax.plot([x + .6, x + .6], [y - .45, y - .75], color='red', linewidth=0.5)
+            ax.plot([x + .6, x + .7], [y - .6, y - .6], color='red', linewidth=0.5)
+            ax.plot([x + .7, x + .7], [y - .45, y - .75], color='green', linewidth=0.5)
+            ax.plot([x + .75, x + .75], [y - .5, y - .7], color='green', linewidth=0.5)
+            ax.plot([x + .8, x + .8], [y - .55, y - .65], color='green', linewidth=0.5)
+            ax.plot([x + .375, x + .375], [y - .6, y - 1.4], color='red', linewidth=0.5)
+            ax.plot([x + .375, x + .45], [y - 1.4, y - 1.4], color='red', linewidth=0.5)
+            ax.add_patch(Arc((x+.45 , y-1.4-0.45/4), 0.1, 0.2, angle=0, theta1=270, theta2=90, color='red', linewidth=0.5))
+            ax.add_patch(Arc((x+.45 , y-1.4+0.45/4), 0.1, 0.2, angle=0, theta1=270, theta2=90, color='red', linewidth=0.5))
+            ax.plot([x + .575, x + .575], [y - 1, y - 1.7], color='red', linewidth=.5)
+            ax.plot([x + .55, x + .55], [y - 1, y - 1.7], color='red', linewidth=.5)
+            ax.add_patch(Arc((x+.675 , y-1.1- 0.25/4), 0.1, 0.2, angle=0, theta1=80, theta2=280, color='red', linewidth=.5))
+            ax.add_patch(Arc((x+.675 , y-1.025+ 0.25/4), 0.1, 0.2, angle=0, theta1=80, theta2=280, color='red', linewidth=.5))
+            ax.add_patch(Arc((x+.675 , y-1.6+ 0.25/4), 0.1, 0.2, angle=0, theta1=80, theta2=280, color='red', linewidth=.5))
+            ax.text(x + .4, y - .4, label, fontsize=fs, ha='center')
+            ax.add_patch(Arc((x+.675 , y-1.8+ 0.25/4), 0.1, 0.2, angle=0, theta1=80, theta2=280, color='red', linewidth=.5))
+
+        def draw_symbol(ax, x, y, label, fs):
+            ax.add_patch(Polygon([[x, y-0.1], [x+0.1, y+0.1], [x-0.1, y+0.1]], closed=True, fill=False, edgecolor='red', linewidth=0.5))
+
+        def draw_symbol_upp(ax, x, y, label, fs):
+            ax.add_patch(Polygon([[x, y+0.1], [x+0.1, y-0.1], [x-0.1, y-0.1]], closed=True, fill=False, edgecolor='red', linewidth=0.5))
 
         def draw_name(ax, x, y, label, fs):
-            ax.text(x, y+0.5, label, fontsize=fs+2, ha='center')
+            ax.text(x, y+.5, label, fontsize=fs+2, ha='center')
 
-        # ARCHITECTURE: 1.5 BREAKER
-        if b6 == "One and Half Breaker":
-            fig, ax = plt.subplots(figsize=(15, 18))
+        def draw_la(ax, x, y, label, fs):
+            y = y - .2
+            ax.plot([x-.9, x], [y, y], color='red', linewidth=0.5)
+            ax.plot([x - .9, x - .9], [y +.2, y -.2], color='green', linewidth=0.5)
+            ax.plot([x - .95, x - .95], [y +.15, y -.15], color='green', linewidth=0.5)
+            ax.plot([x - 1, x - 1], [y +.1, y -.1], color='green', linewidth=0.5)
+            ax.text(x-.5, y-0.5, label, fontsize=fs, ha='center')
+
+        def la_comp(ax, x, y):
+            ax.add_patch(Polygon([[x+0.1, y+0.1], [x-0.1, y], [x+0.1, y-0.1]], closed=True, fill=True,color='red', linewidth=0.5))
+            ax.add_patch(Rectangle((x-0.2, y-0.2), 0.4, 0.4, fill=False, edgecolor='red', linewidth=0.5))
+
+        def draw_ict(ax, x, y, label, fs):
+            ax.add_patch(Arc((x , y-0.6/4), 0.3, 0.6, angle=0, theta1=0, theta2=360, color='red', linewidth=0.5))
+            ax.add_patch(Arc((x-.15 , y-0.6/4), 0.2, 0.4, angle=0, theta1=0, theta2=360, color='red', linewidth=0.5))
+            ax.add_patch(Arc((x , (y-.255-0.6/4)), 0.4, 1.2, angle=0, theta1=270, theta2=90, color='red', linewidth=.5))
+            ax.text(x-.25, y-.7, label, fontsize=fs, ha='center')
+
+        def draw_ict_upp(ax, x, y, label, fs):
+            ax.add_patch(Arc((x , y-.525-0.6/4), 0.3, 0.6, angle=0, theta1=0, theta2=360, color='red', linewidth=0.5))
+            ax.add_patch(Arc((x-.15 , y-.525-0.6/4), 0.2, 0.4, angle=0, theta1=0, theta2=360, color='red', linewidth=0.5))
+            ax.add_patch(Arc((x , (y-.255-0.6/4)), 0.4, 1.2, angle=0, theta1=270, theta2=90, color='red', linewidth=.5))
+            ax.text(x-.3, y-.2, label, fontsize=fs, ha='center')
+
+        def draw_reacter(ax, x, y, label, fs):
+            ax.add_patch(Arc((x-.025 , y- .2/4), 0.2, 0.4, angle=0, theta1=80, theta2=300, color='red', linewidth=0.5))
+            ax.add_patch(Arc((x-.025 , y-1.2/4), 0.2, 0.4, angle=0, theta1=60, theta2=300, color='red', linewidth=0.5))
+            ax.add_patch(Arc((x-.025 , y-2.2/4), 0.2, 0.4, angle=0, theta1=60, theta2=300, color='red', linewidth=0.5))
+            ax.add_patch(Arc((x-.025 , y-3.2/4), 0.2, 0.4, angle=0, theta1=60, theta2=280, color='red', linewidth=0.5))
+            ax.text(x-.45, y-.8, label, fontsize=fs, ha='center')
+
+        def draw_earth_symbol(ax, x, y, label, fs):
+            ax.plot([x-.125, x+.125], [y+.1, y+.1], color='green', linewidth=0.5)
+            ax.plot([x-.1, x+.1], [y, y], color='green', linewidth=0.5)
+            ax.plot([x-.075, x+.075], [y-.1, y-.1], color='green', linewidth=0.5)
+            ax.plot([x-.05, x+.05], [y-.2, y-.2], color='green', linewidth=0.5)
+            ax.plot([x-.025, x+.025], [y-.3, y-.3], color='green', linewidth=0.5)
+
+        def draw_earth_symbol_upp(ax, x, y, label, fs):
+            ax.plot([x-.125, x+.125], [y-.3, y-.3], color='green', linewidth=0.5)
+            ax.plot([x-.1, x+.1], [y-.2, y-.2], color='green', linewidth=0.5)
+            ax.plot([x-.075, x+.075], [y-.1, y-.1], color='green', linewidth=0.5)
+            ax.plot([x-.05, x+.05], [y, y], color='green', linewidth=0.5)
+            ax.plot([x-.025, x+.025], [y+.1, y+.1], color='green', linewidth=0.5)
+
+        # =========================================================================
+        # ARCHITECTURE 1: DOUBLE MAIN / TRANSFER BUS
+        # =========================================================================
+        if b6 in ["Double Main Transfer Bus", "Double Main Bus"]:
             
-            def get_labels_15(feeder_num, i):
+            # --- REVERTED DYNAMIC WIDTH SIZING (NO ASPECT RATIO LOCK) ---
+            fig_width = max(12, num_feeders * 2)
+            fig, ax = plt.subplots(figsize=(fig_width, 6))
+            
+            x_start = 5
+            y_start = 8.2
+            gap = 2
+            fontsize = 4 if num_feeders > 3 else 3
+
+            def get_labels_dm(feeder_num):
                 return {
-                    "base_isolator": f"{b12+feeder_num}89A", 
-                    "base_isolatorb": f"{b12+feeder_num}89B", 
-                    "breaker_lbl": f"{b12+feeder_num}52",
-                    "earth_lbl1": f"{b12+feeder_num}89AE", 
-                    "earth_lbl2": f"{b12+feeder_num}89BE", 
-                    "ct_lbl": f"{int(b12+feeder_num)}CT",
-                    "symbol_lbl": f"{int(b12+feeder_num)}"
+                    "base_isolator" : f"{b12+feeder_num}89A", "base_isolatorb" : f"{b12+feeder_num}89B", "breaker_lbl" : f"{b12+feeder_num}52",
+                    "earth_lbl1" : f"{b12+feeder_num}89AE", "earth_lbl2" : f"{b12+feeder_num}89CE1", "iso_lbl2" : f"{b12+feeder_num}89C",
+                    "iso_lbl3" : f"{b12+feeder_num}89D", "ct_lbl" : f"{int((b12+feeder_num))}CT", "wt_lbl" : f"{int((b12+feeder_num))}WT",
+                    "cvt_lbl" : f"{int((b12+feeder_num))}CVT", "la_lbl" : f"{int((b12+feeder_num))}LA", "symbol_lbl" : f"{int((b12+feeder_num))}",
+                    "earth_lbl3" : f"{b12+feeder_num}89CE2", "ict_lbl" : f"{int((b12+feeder_num))}ICT", "rect_lbl" : f"{int((b12+feeder_num))}Reactor",
+                    "symbol_lbl_Tcup" : f"{int((b12+feeder_num))} \n (TFR_Bus_coupler)", "earth_lbl1_Bcup" : f"{b12+feeder_num}89AE1",
+                    "earth_lbl2_Bcup" : f"{b12+feeder_num}89AE2", "earth_lbl3_Bcup" : f"{b12+feeder_num}89BE1", "earth_lbl4_Bcup" : f"{b12+feeder_num}89BE2",
+                    "symbol_lbl_Bcup" : f"{int((b12+feeder_num))} \n (Bus_coupler)", "No_bay_lbl" : f"{int((b12+feeder_num))} \n (Not Exist)"
                 }
+
+            def dm_draw_feeder1(ax, x_offset, y_offset, feeder_num, fs, f_type):
+                L = get_labels_dm(feeder_num)
+                ax.plot([x_offset, x_offset], [y_offset, y_offset+1.8], color='red', linewidth=0.5)
+                ax.plot([x_offset+0.5, x_offset+0.5], [y_offset, y_offset+0.8], color='red', linewidth=0.5)
+                ax.plot([x_offset, x_offset+0.5], [y_offset-1.2, y_offset-1.2], color='red', linewidth=0.5)
+                draw_isolator(ax, x_offset, y_offset, L["base_isolator"], fs)
+                draw_isolator(ax, x_offset+0.5, y_offset, L["base_isolatorb"], fs)
+                earth_sh(ax, x_offset, y_offset, L["earth_lbl1"], fs)
+                draw_breaker(ax, x_offset+0.25, y_offset-2.2, L["breaker_lbl"], fs)
+
+                if b6=="Double Main Transfer Bus":
+                    ax.plot([x_offset+.25, x_offset+0.5], [y_offset-4.5, y_offset-4.5], color='red', linewidth=0.5)
+                    ax.plot([x_offset+0.5, x_offset+0.5], [y_offset-4.5, y_offset-7.5], color='red', linewidth=0.5)
+                    ax.plot([x_offset+0.5, x_offset+0.5], [y_offset-7.75, y_offset-10], color='red', linewidth=0.5)
+                    earth_sh(ax, x_offset+0.25, y_offset-2.2, L["earth_lbl2"], fs)
+                    draw_isolator(ax, x_offset+0.25, y_offset-3.2, L["iso_lbl2"], fs)
+                    earth_sh(ax, x_offset+0.25, y_offset-3.2, L["earth_lbl3"], fs)
+                    draw_isolator(ax, x_offset+0.25, y_offset-4.6, L["iso_lbl3"], fs)
+                    draw_ct(ax, x_offset+0.5, y_offset-6.7, L["ct_lbl"], fs)
+                    if f_type=="Cable Feeder":
+                        ax.plot([x_offset+0.5, x_offset+0.5], [y_offset-7.5, y_offset-7.75], color='red', linewidth=0.5)
+                    else:
+                        draw_wt(ax, x_offset+0.5, y_offset-7.6, L["wt_lbl"], fs)
+                    draw_cvt(ax, x_offset+0.5, y_offset-7.7, L["cvt_lbl"], fs)
+                    draw_la(ax, x_offset+0.5, y_offset-9, L["la_lbl"], fs)
+                    la_comp(ax, x_offset, y_offset-9.2)
+                    draw_name(ax, x_offset+0.25, y_offset+1.75,L["symbol_lbl"], fs)
+                    draw_symbol(ax, x_offset+0.5, y_offset-10.1, L["symbol_lbl"], fs)
+
+                elif b6=="Double Main Bus":
+                    ax.plot([x_offset+.25, x_offset+0.25], [y_offset-2.7, y_offset-4.5], color='red', linewidth=0.5)
+                    draw_ct(ax, x_offset+0.25, y_offset-3.4, L["ct_lbl"], fs)
+                    earth_sh(ax, x_offset+0.25, y_offset-3.7, L["earth_lbl2"], fs)
+                    draw_isolator(ax, x_offset+0.25, y_offset-4.7, L["iso_lbl2"], fs)
+                    earth_sh(ax, x_offset+0.25, y_offset-4.85, L["earth_lbl3"], fs)
+                    ax.plot([x_offset+0.25, x_offset+0.25], [y_offset-5.9, y_offset-6.55], color='red', linewidth=0.5)
+                    ax.plot([x_offset+0.25, x_offset+0.25], [y_offset-6.75, y_offset-10.4], color='red', linewidth=0.5)
+                    if f_type=="Cable Feeder":
+                        ax.plot([x_offset+0.25, x_offset+0.25], [y_offset-6.55, y_offset-6.75], color='red', linewidth=0.5)
+                    else:
+                        draw_wt(ax, x_offset+0.25, y_offset-6.6, L["wt_lbl"], fs)
+                    draw_cvt(ax, x_offset+0.25, y_offset-7, L["cvt_lbl"], fs)
+                    draw_la(ax, x_offset+0.25, y_offset-8.5, L["la_lbl"], fs)
+                    la_comp(ax, x_offset-0.25, y_offset-8.7)
+                    draw_name(ax, x_offset+0.25, y_offset+1.75,L["symbol_lbl"], fs)
+                    draw_symbol(ax, x_offset+0.25, y_offset-10.5, L["symbol_lbl"], fs)
+
+            def dm_draw_feeder2(ax, x_offset, y_offset, feeder_num, fs):
+                L = get_labels_dm(feeder_num)
+                ax.plot([x_offset, x_offset], [y_offset, y_offset+1.8], color='red', linewidth=0.5)
+                ax.plot([x_offset+0.5, x_offset+0.5], [y_offset, y_offset+0.8], color='red', linewidth=0.5)
+                ax.plot([x_offset, x_offset+0.5], [y_offset-1.2, y_offset-1.2], color='red', linewidth=0.5)
+                draw_isolator(ax, x_offset, y_offset, L["base_isolator"], fs)
+                draw_isolator(ax, x_offset+0.5, y_offset, L["base_isolatorb"], fs)
+                earth_sh(ax, x_offset, y_offset, L["earth_lbl1"], fs)
+                draw_breaker(ax, x_offset+0.25, y_offset-2.2, L["breaker_lbl"], fs)
+
+                if b6=="Double Main Transfer Bus":
+                    ax.plot([x_offset+.25, x_offset+0.5], [y_offset-4.5, y_offset-4.5], color='red', linewidth=0.5)
+                    ax.plot([x_offset+0.5, x_offset+0.5], [y_offset-4.5, y_offset-8.85], color='red', linewidth=0.5)
+                    ax.plot([x_offset+0.5, x_offset+0.5], [y_offset-10, y_offset-11.1], color='red', linewidth=0.5)
+                    earth_sh(ax, x_offset+0.25, y_offset-2.2, L["earth_lbl2"], fs)
+                    draw_isolator(ax, x_offset+0.25, y_offset-3.2, L["iso_lbl2"], fs)
+                    earth_sh(ax, x_offset+0.25, y_offset-3.2, L["earth_lbl3"], fs)
+                    draw_isolator(ax, x_offset+0.25, y_offset-4.6, L["iso_lbl3"], fs)
+                    draw_ct(ax, x_offset+0.5, y_offset-6.7, L["ct_lbl"], fs)
+                    draw_la(ax,x_offset+0.5, y_offset-7.6, L["la_lbl"], fs)
+                    la_comp(ax, x_offset, y_offset-7.8)
+                    draw_ict(ax,x_offset+0.5, y_offset-9, L["ict_lbl"], fs)
+                    draw_symbol(ax, x_offset+0.5, y_offset-11.2, L["symbol_lbl"], fs)
+                    draw_name(ax, x_offset+0.25, y_offset+1.75, L["symbol_lbl"], fs)
+
+                elif b6=="Double Main Bus":
+                    ax.plot([x_offset+.25, x_offset+0.25], [y_offset-2.7, y_offset-4.5], color='red', linewidth=0.5)
+                    draw_ct(ax, x_offset+0.25, y_offset-3.4, L["ct_lbl"], fs)
+                    earth_sh(ax, x_offset+0.25, y_offset-3.7, L["earth_lbl2"], fs)
+                    draw_isolator(ax, x_offset+0.25, y_offset-4.7, L["iso_lbl2"], fs)
+                    earth_sh(ax, x_offset+0.25, y_offset-4.85, L["earth_lbl3"], fs)
+                    ax.plot([x_offset+0.25, x_offset+0.25], [y_offset-5.9, y_offset-7.8], color='red', linewidth=0.5)
+                    ax.plot([x_offset+0.25, x_offset+0.25], [y_offset-9, y_offset-10.1], color='red', linewidth=0.5)
+                    draw_la(ax,x_offset+0.25, y_offset-6.6, L["la_lbl"], fs)
+                    la_comp(ax, x_offset-.25, y_offset-6.8)
+                    draw_ict(ax,x_offset+0.25, y_offset-8, L["ict_lbl"], fs)
+                    draw_symbol(ax, x_offset+0.25, y_offset-10.2, L["symbol_lbl"], fs)
+                    draw_name(ax, x_offset+0.25, y_offset+1.75, L["symbol_lbl"], fs)
+
+            def dm_draw_feeder3(ax, x_offset, y_offset, feeder_num, fs):
+                L = get_labels_dm(feeder_num)
+                ax.plot([x_offset, x_offset], [y_offset, y_offset+1.8], color='red', linewidth=0.5)
+                ax.plot([x_offset+0.5, x_offset+0.5], [y_offset, y_offset+0.8], color='red', linewidth=0.5)
+                ax.plot([x_offset, x_offset+0.5], [y_offset-1.2, y_offset-1.2], color='red', linewidth=0.5)
+                draw_isolator(ax, x_offset, y_offset, L["base_isolator"], fs)
+                draw_isolator(ax, x_offset+0.5, y_offset, L["base_isolatorb"], fs)
+                earth_sh(ax, x_offset, y_offset, L["earth_lbl1"], fs)
+                draw_breaker(ax, x_offset+0.25, y_offset-2.2, L["breaker_lbl"], fs)
+
+                if b6=="Double Main Transfer Bus":
+                    ax.plot([x_offset+.25, x_offset+0.5], [y_offset-4.5, y_offset-4.5], color='red', linewidth=0.5)
+                    ax.plot([x_offset+0.5, x_offset+0.5], [y_offset-4.5, y_offset-8.85], color='red', linewidth=0.5)
+                    ax.plot([x_offset+0.5, x_offset+0.5], [y_offset-10, y_offset-11.1], color='red', linewidth=0.5)
+                    earth_sh(ax, x_offset+0.25, y_offset-2.2, L["earth_lbl2"], fs)
+                    draw_isolator(ax, x_offset+0.25, y_offset-3.2, L["iso_lbl2"], fs)
+                    earth_sh(ax, x_offset+0.25, y_offset-3.2, L["earth_lbl3"], fs)
+                    draw_isolator(ax, x_offset+0.25, y_offset-4.6, L["iso_lbl3"], fs)
+                    draw_ct(ax, x_offset+0.5, y_offset-6.7, L["ct_lbl"], fs)
+                    draw_la(ax,x_offset+0.5, y_offset-7.6, L["la_lbl"], fs)
+                    la_comp(ax, x_offset, y_offset-7.8)
+                    draw_reacter(ax,x_offset+0.5, y_offset-9, L["rect_lbl"], fs)
+                    draw_earth_symbol(ax, x_offset+0.5, y_offset-11.2, L["symbol_lbl"], fs)
+                    draw_name(ax, x_offset+0.25, y_offset+1.75, L["symbol_lbl"], fs)
+
+                elif b6=="Double Main Bus":
+                    ax.plot([x_offset+.25, x_offset+0.25], [y_offset-2.7, y_offset-4.5], color='red', linewidth=0.5)
+                    draw_ct(ax, x_offset+0.25, y_offset-3.4, L["ct_lbl"], fs)
+                    earth_sh(ax, x_offset+0.25, y_offset-3.7, L["earth_lbl2"], fs)
+                    draw_isolator(ax, x_offset+0.25, y_offset-4.7, L["iso_lbl2"], fs)
+                    earth_sh(ax, x_offset+0.25, y_offset-4.85, L["earth_lbl3"], fs)
+                    ax.plot([x_offset+0.25, x_offset+0.25], [y_offset-5.9, y_offset-7.85], color='red', linewidth=0.5)
+                    ax.plot([x_offset+0.25, x_offset+0.25], [y_offset-9, y_offset-10.1], color='red', linewidth=0.5)
+                    draw_la(ax,x_offset+0.25, y_offset-6.6, L["la_lbl"], fs)
+                    la_comp(ax, x_offset-.25, y_offset-6.8)
+                    draw_reacter(ax,x_offset+0.25, y_offset-8, L["rect_lbl"], fs)
+                    draw_earth_symbol(ax, x_offset+0.25, y_offset-10.2, L["symbol_lbl"], fs)
+                    draw_name(ax, x_offset+0.25, y_offset+1.75, L["symbol_lbl"], fs)
+
+            def dm_draw_feeder4(ax, x_offset, y_offset, feeder_num, fs, f_type):
+                L = get_labels_dm(feeder_num)
+                if b6=="Double Main Transfer Bus":
+                    ax.plot([x_offset, x_offset], [y_offset, y_offset+1.8], color='red', linewidth=0.5)
+                    ax.plot([x_offset+.5, x_offset+.5], [y_offset, y_offset+0.8], color='red', linewidth=0.5)
+                    ax.plot([x_offset+0.25, x_offset+0.25], [y_offset-3.2, y_offset-4.6], color='red', linewidth=0.5)
+                    draw_isolator(ax, x_offset, y_offset,L["base_isolator"], fs)
+                    draw_isolator(ax, x_offset+0.5, y_offset, L["base_isolatorb"], fs)
+                    earth_sh(ax, x_offset, y_offset, L["earth_lbl1"], fs)
+                    ax.plot([x_offset, x_offset+0.5], [y_offset-1.2, y_offset-1.2], color='red', linewidth=0.5)
+                    draw_breaker(ax, x_offset+0.25, y_offset-2.2, L["breaker_lbl"], fs)
+                    earth_sh(ax, x_offset+0.25, y_offset-3.6, L["earth_lbl2"], fs)
+                    draw_isolator(ax, x_offset+0.25, y_offset-4.6, L["iso_lbl2"], fs)
+                    earth_sh(ax, x_offset+0.25, y_offset-4.6, L["earth_lbl3"], fs)
+                    draw_ct(ax, x_offset+0.25, y_offset-3.5, L["ct_lbl"], fs)
+                    draw_name(ax, x_offset+0.25, y_offset+1.75, L["symbol_lbl_Tcup"], fs)
+                elif b6=="Double Main Bus":
+                    dm_draw_feeder1(ax, x_offset, y_offset, feeder_num, fs, f_type)
+
+            def dm_draw_feeder5(ax, x_offset, y_offset, feeder_num, fs):
+                L = get_labels_dm(feeder_num)
+                ax.plot([x_offset-.2, x_offset-.2], [y_offset-.3, y_offset+1.8], color='red', linewidth=0.5)
+                ax.plot([x_offset+0.7, x_offset+.7], [y_offset-.3, y_offset+0.8], color='red', linewidth=0.5)
+                ax.plot([x_offset-.2, x_offset-.2], [y_offset-4, y_offset-1.5], color='red', linewidth=0.5)
+                ax.plot([x_offset+0.7, x_offset+.7], [y_offset-4, y_offset-1.5], color='red', linewidth=0.5)
+                draw_isolator(ax, x_offset-.2, y_offset-.3, L["base_isolator"], fs)
+                draw_isolator(ax, x_offset+0.7, y_offset-.3, L["base_isolatorb"], fs)
+                earth_sh(ax, x_offset-0.2, y_offset+.8, L["earth_lbl1_Bcup"], fs)
+                earth_sh(ax, x_offset-0.2, y_offset-.5, L["earth_lbl2_Bcup"], fs)
+                earth_sh(ax, x_offset+.7, y_offset+.8, L["earth_lbl3_Bcup"], fs)
+                earth_sh(ax, x_offset+.7, y_offset-.5, L["earth_lbl4_Bcup"], fs)
+                draw_ct(ax, x_offset-0.2, y_offset-2.5, L["ct_lbl"], fs)
+                draw_breaker_coupler(ax, x_offset+0.25, y_offset-4, L["breaker_lbl"], fs)
+                draw_name(ax, x_offset+0.25, y_offset+1.75, L["symbol_lbl_Bcup"], fs)
+
+            def dm_draw_feeder6(ax, x_offset, y_offset, feeder_num, fs):
+                L = get_labels_dm(feeder_num)
+                draw_name(ax, x_offset+0.25, y_offset+1.75, L["No_bay_lbl"], fs)
+
+            for i in range(num_feeders):
+                f_type = feeder_types[i]
+                f_name = feeder_names[i]
+                x_pos = x_start + i * gap
+                feeder_label = i + 1
+
+                ax.plot([1, num_feeders*3], [10, 10], color='blue', linewidth=0.5)
+                ax.text(1.5, 10.5, f"{b12} KV_BUS1", fontsize=fontsize+4,  va='center')
+                ax.plot([1, num_feeders*3], [9, 9], color='green', linewidth=0.5)
+                ax.text(1.5, 9.5, f"{b12} KV_BUS2", fontsize=fontsize+4,  va='center')
+                if b6=="Double Main Transfer Bus":
+                    ax.plot([1, num_feeders*3], [2.4, 2.4], color='black', linewidth=0.5)
+                    ax.text(1.5, 2.4+.5, f"{b12} KV_Transfer BUS", fontsize=fontsize+4,  va='center')
+
+                if f_type in ['Line_Bay', 'Tie_Breaker']: dm_draw_feeder1(ax, x_pos, y_start, feeder_label, fontsize, f_type)
+                elif f_type == 'ICT' : dm_draw_feeder2(ax, x_pos, y_start, feeder_label, fontsize)
+                elif f_type == 'Reactor' : dm_draw_feeder3(ax, x_pos, y_start, feeder_label, fontsize)
+                elif f_type == 'Transfer_Bus_coupler' : dm_draw_feeder4(ax, x_pos, y_start, feeder_label, fontsize, f_type)
+                elif f_type == 'Bus_Coupler' : dm_draw_feeder5(ax, x_pos, y_start, feeder_label, fontsize)
+                elif f_type == 'No_bay' : dm_draw_feeder6(ax, x_pos, y_start, feeder_label, fontsize)
+                elif f_type == 'Cable Feeder' : dm_draw_feeder1(ax, x_pos, y_start, feeder_label, fontsize, f_type)
+                else: dm_draw_feeder1(ax, x_pos, y_start, feeder_label, fontsize, f_type)
+
+                words = f_name.split()
+                lines, current_line = [], ""
+                for word in words:
+                    if len(current_line + " " + word) <= 24:
+                        current_line = current_line + " " + word if current_line else word
+                    else:
+                        lines.append(current_line)
+                        current_line = word
+                if current_line: lines.append(current_line)
+                wrapped_text = "\n".join(lines)
+                full_text = f"{b12 + feeder_label}\n{wrapped_text}"
+
+                if b6=="Double Main Transfer Bus":
+                    ax.text(x_pos+.5, y_start-12, full_text, ha='center', va='top', fontsize=fontsize+1)
+                elif b6=="Double Main Bus":
+                    ax.text(x_pos+.25, y_start-11.25, full_text, ha='center', va='top', fontsize=fontsize+1)
+
+            # --- DYNAMIC PERFECT CENTERING ---
+            center_x = x_start + ((num_feeders - 1) * gap) / 2.0
+            ax.text(center_x, 14, b8, fontsize=fontsize+25, va='center', ha='center')  
+            ax.text(center_x, 12, b9, fontsize=fontsize+15, va='center', ha='center')  
+
+            ax.set_xlim(1,(num_feeders)*2+6)
+            ax.set_ylim(-6*1.05, 1.5*10.5)
+            ax.axis('off')
+
+        # =========================================================================
+        # ARCHITECTURE 2: ONE AND A HALF BREAKER
+        # =========================================================================
+        else:
+            
+            # --- REVERTED DYNAMIC WIDTH SIZING (NO ASPECT RATIO LOCK) ---
+            num_cols = math.ceil(num_feeders / 3.0)
+            fig_width = max(12, num_cols * 4) 
+            fig, ax = plt.subplots(figsize=(fig_width, 18))
+
+            x_start = 5
+            y_start = 19.8
+            x_gap = 3
+            y_gap = 6.8
+            feeders_per_column = 3
+            fontsize = 4
+
+            def get_labels_15(feeder_num, i):
+                bay_num = i + 1 
+                earth_label = f"{b12+feeder_num}89AE"
+                earth_label2 = f"{b12+feeder_num}89AE1" 
+                current_type = feeder_types[i]
+
+                ct_label = f"{int(b12+feeder_num)}CT"
+
+                if current_type == "ICT": iso_lbl2, earth_lbl3 = f"{b12+feeder_num}89T", f"{b12+feeder_num}89TE"
+                elif current_type == "Line_Bay": iso_lbl2, earth_lbl3 = f"{b12+feeder_num}89L", f"{b12+feeder_num}89LE"
+                elif current_type == "Reactor": iso_lbl2, earth_lbl3 = f"{b12+feeder_num}89R", f"{b12+feeder_num}89RE"
+                else: iso_lbl2, earth_lbl3 = f"{b12+feeder_num}89C", f"{b12+feeder_num}89CE"
+
+                labels = {
+                    "base_isolator": f"{b12+feeder_num}89A", "base_isolatorb": f"{b12+feeder_num}89B", "breaker_lbl": f"{b12+feeder_num}52",
+                    "earth_lbl1": earth_label, "earth_lbl_BUS": earth_label2, "earth_lbl2": f"{b12+feeder_num}89BE",
+                    "iso_lbl2": iso_lbl2, "ct_lbl": f"{int(b12+feeder_num)}CT", "ct_lbl_middle": ct_label,
+                    "wt_lbl": f"{int(b12+feeder_num)}WT", "cvt_lbl": f"{int(b12+feeder_num)}CVT", "la_lbl": f"{int(b12+feeder_num)}LA",
+                    "symbol_lbl": f"{int(b12+feeder_num)}", "earth_lbl3": earth_lbl3, "ict_lbl": f"{int(b12+feeder_num)}ICT", "rect_lbl": f"{int(b12+feeder_num)}Reactor",
+                    "No_bay_lbl" : f"{int((b12+feeder_num))} \n (Not Exist)"
+                }
+                if bay_num % 3 == 0:
+                    labels["base_isolator"], labels["base_isolatorb"], labels["earth_lbl1"], labels["earth_lbl2"] = \
+                        labels["base_isolatorb"], labels["base_isolator"], labels["earth_lbl2"], labels["earth_lbl1"]
+                return labels
 
             def common_15(ax, x_offset, y_offset, feeder_num, fs, i):
                 L = get_labels_15(feeder_num, i)
-                draw_isolator(ax, x_offset+.25, y_offset, L["base_isolator"], fs)
+                draw_isolator(ax, x_offset+.25, y_offset,L["base_isolator"], fs)
                 earth_sh(ax, x_offset+.25, y_offset-.5, L["earth_lbl1"], fs)
                 draw_breaker(ax, x_offset+0.25, y_offset-2.2, L["breaker_lbl"], fs)
-                draw_ct(ax, x_offset+0.25, y_offset-3.5, L["ct_lbl"], fs) 
                 earth_sh(ax, x_offset+0.25, y_offset-3.6, L["earth_lbl2"], fs)
                 draw_isolator(ax, x_offset+0.25, y_offset-4.6, L["base_isolatorb"], fs)
+                # STANDARD 1 CT FOR TOP/BOTTOM BAYS
+                draw_ct(ax, x_offset+0.25, y_offset-3.5, L["ct_lbl"], fs) 
                 ax.plot([x_offset+0.25, x_offset+0.25], [y_offset-3.2, y_offset-4.6+.2], color='red', linewidth=0.5)
-                draw_name(ax, x_offset-0.5, y_offset-3, L["symbol_lbl"], fs)
+                draw_name(ax, x_offset-0.5, y_offset-3,L["symbol_lbl"], fs)
 
-            # THE SYMMETRICAL TIE BAY (Equi-spaced Fix)
             def middle_common_15(ax, x_offset, y_offset, feeder_num, fs, i):
                 L = get_labels_15(feeder_num, i)
-                cb_center_y = y_offset - 2.5 
-                draw_breaker(ax, x_offset+0.25, cb_center_y, L["breaker_lbl"], fs)
+                # --- PERFECTED SYMMETRIC DUAL CT ARCHITECTURE ---
+                # Upper Isolator
+                draw_isolator(ax, x_offset+.25, y_offset+0.6, L["base_isolator"], fs)
+                # Upper Earth Switch
+                earth_sh(ax, x_offset+.25, y_offset+0.1, L["earth_lbl1"], fs)
                 
-                # TOP (Mirrored Upwards)
+                # TOP CT (ACT)
                 ct_a_lbl = L["ct_lbl"].replace("CT", "ACT")
-                draw_ct(ax, x_offset+0.25, cb_center_y + 1.3, ct_a_lbl, fs)  
-                earth_sh(ax, x_offset+0.25, cb_center_y + 2.5, L["earth_lbl1"], fs)
-                draw_isolator(ax, x_offset+0.25, cb_center_y + 3.1, L["base_isolator"], fs)
+                draw_ct(ax, x_offset+0.25, y_offset-1.2, ct_a_lbl, fs)  
                 
-                # BOTTOM (Mirrored Downwards)
+                # TIE BREAKER (Centered)
+                draw_breaker(ax, x_offset+0.25, y_offset-2.5, L["breaker_lbl"], fs)
+                
+                # BOTTOM CT (BCT)
                 ct_b_lbl = L["ct_lbl"].replace("CT", "BCT")
-                draw_ct(ax, x_offset+0.25, cb_center_y - 1.3, ct_b_lbl, fs)  
-                earth_sh(ax, x_offset+0.25, cb_center_y - 2.5, L["earth_lbl2"], fs)
-                draw_isolator(ax, x_offset+0.25, cb_center_y - 3.1, L["base_isolatorb"], fs)
+                draw_ct(ax, x_offset+0.25, y_offset-3.8, ct_b_lbl, fs)  
                 
-                ax.plot([x_offset+0.25, x_offset+0.25], [cb_center_y + 3.1, cb_center_y - 3.1], color='red', linewidth=0.5)
-                draw_name(ax, x_offset-0.5, cb_center_y, L["symbol_lbl"], fs)
+                # Lower Earth Switch
+                earth_sh(ax, x_offset+0.25, y_offset-4.7, L["earth_lbl2"], fs)
+                # Lower Isolator
+                draw_isolator(ax, x_offset+0.25, y_offset-5.2, L["base_isolatorb"], fs)
+                
+                # Continuous connecting wire
+                ax.plot([x_offset+0.25, x_offset+0.25], [y_offset+0.6, y_offset-5.2], color='red', linewidth=0.5)
+                draw_name(ax, x_offset-0.5, y_offset-2.5, L["symbol_lbl"], fs)
 
-            # Restored Loop for all 3 Bays in Diameter
+            def grid_draw_feeder1(ax, x_offset, y_offset, feeder_num, fs, i):
+                L, n = get_labels_15(feeder_num, i), i+1
+                if (n - 1) % 3 == 0:
+                    common_15(ax, x_offset, y_offset, feeder_num, fs, i)
+                    ax.plot([x_offset+0.25, x_offset+0.25], [y_offset+.9, y_offset+.4], color='red', linewidth=0.5)
+                    ax.plot([x_offset+.25, x_offset+.75], [y_offset-5.8, y_offset-5.8], color='red', linewidth=0.5)
+                    ax.plot([x_offset+.75, x_offset+.75], [y_offset-5.8, y_offset+6.3], color='red', linewidth=0.5)
+                    draw_isolator(ax, x_offset+0.75,y_offset+2 , L["iso_lbl2"], fs)
+                    earth_sh(ax, x_offset+0.75, y_offset+3, L["earth_lbl3"], fs)
+                    draw_wt(ax, x_offset+.75, y_offset+3.2, L["wt_lbl"], fs)
+                    draw_cvt(ax, x_offset+.75, y_offset+5, L["cvt_lbl"], fs)
+                    draw_la(ax, x_offset+.75, y_offset+5.2, L["la_lbl"], fs)
+                    la_comp(ax, x_offset+.3, y_offset+5)
+                    draw_symbol_upp(ax, x_offset+.75, y_offset+6.4, L["symbol_lbl"], fs)
+                elif (n - 2) % 3 == 0: 
+                    middle_common_15(ax, x_offset, y_offset, feeder_num, fs, i)
+                elif (n - 3) % 3 == 0:
+                    common_15(ax, x_offset, y_offset, feeder_num, fs, i)
+                    ax.plot([x_offset+0.25, x_offset+0.25], [y_offset-5.8, y_offset-6.4], color='red', linewidth=0.5)
+                    ax.plot([x_offset+.25, x_offset+.75], [y_offset+.5, y_offset+.5], color='red', linewidth=0.5)
+                    ax.plot([x_offset+.75, x_offset+.75], [y_offset+.5, y_offset-11], color='red', linewidth=0.5)
+                    draw_isolator(ax, x_offset+0.75, y_offset-7, L["iso_lbl2"], fs)
+                    earth_sh(ax, x_offset+0.75, y_offset-7.3, L["earth_lbl3"], fs)
+                    draw_wt(ax, x_offset+.75, y_offset-8.6, L["wt_lbl"], fs)
+                    draw_cvt(ax, x_offset+.75, y_offset-8.7, L["cvt_lbl"], fs)
+                    draw_la(ax, x_offset+.75, y_offset-10, L["la_lbl"], fs)
+                    la_comp(ax, x_offset+.3, y_offset-10.2)
+                    draw_symbol(ax, x_offset+.75, y_offset-11.1, L["symbol_lbl"], fs)
+
+            def grid_draw_feeder2(ax, x_offset, y_offset, feeder_num, fs, i):
+                L, n = get_labels_15(feeder_num, i), i+1
+                if (n - 1) % 3 == 0:
+                    common_15(ax, x_offset, y_offset, feeder_num, fs, i)
+                    ax.plot([x_offset+0.25, x_offset+0.25], [y_offset+.9, y_offset+.4], color='red', linewidth=0.5)
+                    ax.plot([x_offset+.25, x_offset+.75], [y_offset-5.8, y_offset-5.8], color='red', linewidth=0.5)
+                    ax.plot([x_offset+.75, x_offset+.75], [y_offset-5.8, y_offset+6.3], color='red', linewidth=0.5)
+                    draw_isolator(ax, x_offset+0.75,y_offset+2 , L["iso_lbl2"], fs)
+                    earth_sh(ax, x_offset+0.75, y_offset+3, L["earth_lbl3"], fs)
+                    draw_la(ax, x_offset+.75, y_offset+3.6, L["la_lbl"], fs)
+                    la_comp(ax, x_offset+.3, y_offset+3.4)
+                    draw_ict_upp(ax,x_offset+0.75, y_offset+5.2, L["ict_lbl"], fs)
+                    draw_symbol_upp(ax, x_offset+.75, y_offset+6.4, L["symbol_lbl"], fs)
+                elif (n - 2) % 3 == 0: 
+                    middle_common_15(ax, x_offset, y_offset, feeder_num, fs, i)
+                elif (n - 3) % 3 == 0:
+                    common_15(ax, x_offset, y_offset, feeder_num, fs, i)
+                    ax.plot([x_offset+0.25, x_offset+0.25], [y_offset-5.8, y_offset-6.4], color='red', linewidth=0.5)
+                    ax.plot([x_offset+.25, x_offset+.75], [y_offset+.5, y_offset+.5], color='red', linewidth=0.5)
+                    ax.plot([x_offset+.75, x_offset+.75], [y_offset+.5, y_offset-11.5], color='red', linewidth=0.5)
+                    draw_isolator(ax, x_offset+0.75, y_offset-7, L["iso_lbl2"], fs)
+                    earth_sh(ax, x_offset+0.75, y_offset-7.3, L["earth_lbl3"], fs)
+                    draw_ict(ax,x_offset+0.75, y_offset-10, L["ict_lbl"], fs)
+                    draw_la(ax, x_offset+.75, y_offset-9, L["la_lbl"], fs)
+                    la_comp(ax, x_offset+.3, y_offset-9.2)
+                    draw_symbol(ax, x_offset+.75, y_offset-11.6, L["symbol_lbl"], fs)
+
+            def grid_draw_feeder3(ax, x_offset, y_offset, feeder_num, fs, i):
+                L, n = get_labels_15(feeder_num, i), i+1
+                if (n - 1) % 3 == 0:
+                    common_15(ax, x_offset, y_offset, feeder_num, fs, i)
+                    ax.plot([x_offset+0.25, x_offset+0.25], [y_offset+.9, y_offset+.4], color='red', linewidth=0.5)
+                    ax.plot([x_offset+.25, x_offset+.75], [y_offset-5.8, y_offset-5.8], color='red', linewidth=0.5)
+                    ax.plot([x_offset+.75, x_offset+.75], [y_offset-5.8, y_offset+6.3], color='red', linewidth=0.5)
+                    draw_isolator(ax, x_offset+0.75,y_offset+2 , L["iso_lbl2"], fs)
+                    earth_sh(ax, x_offset+0.75, y_offset+3, L["earth_lbl3"], fs)
+                    draw_la(ax, x_offset+.75, y_offset+3.6, L["la_lbl"], fs)
+                    la_comp(ax, x_offset+.3, y_offset+3.4)
+                    draw_reacter(ax,x_offset+0.75, y_offset+5.2, L["rect_lbl"], fs)
+                    draw_earth_symbol_upp(ax, x_offset+.75, y_offset+6.6, L["symbol_lbl"], fs)
+                elif (n - 2) % 3 == 0: 
+                    middle_common_15(ax, x_offset, y_offset, feeder_num, fs, i)
+                elif (n - 3) % 3 == 0:
+                    common_15(ax, x_offset, y_offset, feeder_num, fs, i)
+                    ax.plot([x_offset+0.25, x_offset+0.25], [y_offset-5.8, y_offset-6.4], color='red', linewidth=0.5)
+                    ax.plot([x_offset+.25, x_offset+.75], [y_offset+.5, y_offset+.5], color='red', linewidth=0.5)
+                    ax.plot([x_offset+.75, x_offset+.75], [y_offset+.5, y_offset-11.5], color='red', linewidth=0.5)
+                    draw_isolator(ax, x_offset+0.75, y_offset-7, L["iso_lbl2"], fs)
+                    earth_sh(ax, x_offset+0.75, y_offset-7.3, L["earth_lbl3"], fs)
+                    draw_reacter(ax,x_offset+0.75, y_offset-10, L["rect_lbl"], fs)
+                    draw_la(ax, x_offset+.75, y_offset-9, L["la_lbl"], fs)
+                    la_comp(ax, x_offset+.3, y_offset-9.2)
+                    draw_earth_symbol(ax, x_offset+.75, y_offset-11.6, L["symbol_lbl"], fs)
+
+            def grid_draw_feeder4(ax, x_offset, y_offset, feeder_num, fs, i):
+                L, n = get_labels_15(feeder_num, i), i+1
+                if (n - 1) % 3 == 0:
+                    ax.plot([x_offset+0.25, x_offset+0.25], [y_offset+.9, y_offset+.4], color='red', linewidth=0.5)
+                    draw_isolator(ax, x_offset+.25, y_offset,L["base_isolator"], fs)
+                    earth_sh(ax, x_offset+.25, y_offset-.5, L["earth_lbl1"], fs)
+                    ax.plot([x_offset+0.25, x_offset+0.25], [y_offset-1, y_offset-5.95], color='red', linewidth=0.5)
+                    draw_name(ax, x_offset-0.5, y_offset-3,L["symbol_lbl"], fs)
+                elif (n - 2) % 3 == 0: 
+                    middle_common_15(ax, x_offset, y_offset, feeder_num, fs, i)
+                elif (n - 3) % 3 == 0:
+                    ax.plot([x_offset+0.25, x_offset+0.25], [y_offset-5.8, y_offset-6.4], color='red', linewidth=0.5)
+                    earth_sh(ax, x_offset+0.25, y_offset-3.6, L["earth_lbl2"], fs)
+                    draw_isolator(ax, x_offset+0.25, y_offset-4.6, L["base_isolatorb"], fs)
+                    ax.plot([x_offset+0.25, x_offset+0.25], [y_offset+.45, y_offset-4.6], color='red', linewidth=0.5)
+                    draw_name(ax, x_offset-0.5, y_offset-3,L["symbol_lbl"], fs)
+
+            def grid_draw_feeder5(ax, x_offset, y_offset, feeder_num, fs, i):
+                L, n = get_labels_15(feeder_num, i), i+1
+                if (n - 1) % 3 == 0: 
+                    draw_name(ax, x_offset-0.5, y_offset-3,L["No_bay_lbl"], fs)
+                elif (n - 2) % 3 == 0: 
+                    # TRUE NO BAY BYPASS: Pure connecting wire replacing the Tie Bay equipment.
+                    ax.plot([x_offset+0.25, x_offset+0.25], [y_offset+1.1, y_offset-4.6], color='red', linewidth=0.5)
+                    draw_name(ax, x_offset-0.5, y_offset-3,L["No_bay_lbl"], fs)
+                elif (n - 3) % 3 == 0:
+                    draw_name(ax, x_offset-0.5, y_offset-3,L["No_bay_lbl"], fs)
+
             for i in range(num_feeders):
-                col, row = i // 3, i % 3
-                x_pos = 5 + col * 4
-                y_pos = 19.8 - row * 6.8
+                f_type = feeder_types[i]
+                f_name = feeder_names[i]
+                col = i // feeders_per_column       
+                row = i % feeders_per_column        
+                x_pos = x_start + col * x_gap
+                y_pos = y_start - row * y_gap       
+                feeder_label = i + 1
+
+                ax.plot([1, num_cols*x_gap + 8], [20.7,20.7], color='blue', linewidth=0.5)
+                ax.plot([1, num_cols*x_gap + 8], [-.2,-.2], color='green', linewidth=0.5)
+
+                if f_type in ['Line_Bay', 'Tie_Breaker']: grid_draw_feeder1(ax, x_pos, y_pos, feeder_label, fontsize, i)
+                elif f_type == 'ICT': grid_draw_feeder2(ax, x_pos, y_pos, feeder_label, fontsize, i)
+                elif f_type == 'Reactor': grid_draw_feeder3(ax, x_pos, y_pos, feeder_label, fontsize, i)
+                elif f_type == 'Future_Bay': grid_draw_feeder4(ax, x_pos, y_pos, feeder_label, fontsize, i)
+                elif f_type == 'No_bay': grid_draw_feeder5(ax, x_pos, y_pos, feeder_label, fontsize, i)
+                else: grid_draw_feeder1(ax, x_pos, y_pos, feeder_label, fontsize, i)
+
+                n = i + 1
+                words = f_name.split()
+                lines, current_line = [], ""
+                for word in words:
+                    if len(current_line + " " + word) <= 24:
+                        current_line = current_line + " " + word if current_line else word
+                    else:
+                        lines.append(current_line)
+                        current_line = word
+                if current_line: lines.append(current_line)
+                wrapped_text = "\n".join(lines)
+                full_text = f"{b12 + feeder_label}\n{wrapped_text}"
+                y_label_pos = y_start + 8.5 if n % 3 == 1 else None if n % 3 == 2 else y_start - 26
                 
-                if row == 1: # Tie Bay
-                    middle_common_15(ax, x_pos, y_pos, i+1, fontsize, i)
-                else: # Top or Bottom Bays
-                    common_15(ax, x_pos, y_pos, i+1, fontsize, i)
+                if y_label_pos is not None:
+                    ax.text(x_pos+.75, y_label_pos, full_text, ha='center', va='top', fontsize=fontsize+1)
+            
+            # --- DYNAMIC PERFECT CENTERING ---
+            center_x = x_start + ((num_cols - 1) * x_gap) / 2.0
+            ax.text(1.5, 21.1, f"{b12} KV_BUS1", fontsize=fontsize+4, va='center')
+            ax.text(1.5, .1, f"{b12} KV_BUS2", fontsize=fontsize+4, va='center')
+            ax.text(center_x, 32, b8, fontsize=fontsize+25, va='center', ha='center')  
+            ax.text(center_x, 30, b9, fontsize=fontsize+15, va='center', ha='center')  
 
-            # Bus Lines
-            ax.plot([1, 15], [20.7, 20.7], color='blue', linewidth=0.5)
-            ax.plot([1, 15], [0.2, 0.2], color='green', linewidth=0.5)
-            ax.set_ylim(-5, 25); ax.set_xlim(0, 16); ax.axis('off')
+            ax.set_xlim(0, x_start + num_cols * x_gap + 2)
+            ax.set_ylim(-15, 38)  
+            ax.axis('off')
 
+        # =========================================================================
+        # RENDER AND EXPORT 
+        # =========================================================================
         st.pyplot(fig)
         pdf_io, dxf_io = io.BytesIO(), io.StringIO()
         fig.savefig(pdf_io, format='pdf', bbox_inches='tight')
         export_ax_to_dxf(ax).write(dxf_io)
+
         st.success("✅ Generation Complete!")
+        col1, col2 = st.columns(2)
+        with col1: st.download_button("📥 Download PDF", data=pdf_io.getvalue(), file_name="Substation_SLD.pdf", mime="application/pdf")
+        with col2: st.download_button("📥 Download AutoCAD DXF", data=dxf_io.getvalue(), file_name="Substation_SLD.dxf", mime="application/dxf")
