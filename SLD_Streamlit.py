@@ -601,33 +601,39 @@ if st.button("Generate AutoCAD DXF", type="primary"):
                 draw_name(ax, x_offset-0.5, y_offset-3,L["symbol_lbl"], fs)
 
             def middle_common_15(ax, x_offset, y_offset, feeder_num, fs, i):
-                L = get_labels_15(feeder_num, i)
-                # --- PERFECTED SYMMETRIC DUAL CT ARCHITECTURE ---
-                # Upper Isolator
-                draw_isolator(ax, x_offset+.25, y_offset+0.6, L["base_isolator"], fs)
-                # Upper Earth Switch
-                earth_sh(ax, x_offset+.25, y_offset+0.1, L["earth_lbl1"], fs)
-                
-                # TOP CT (ACT)
-                ct_a_lbl = L["ct_lbl"].replace("CT", "ACT")
-                draw_ct(ax, x_offset+0.25, y_offset-1.2, ct_a_lbl, fs)  
-                
-                # TIE BREAKER (Centered)
-                draw_breaker(ax, x_offset+0.25, y_offset-2.5, L["breaker_lbl"], fs)
-                
-                # BOTTOM CT (BCT)
-                ct_b_lbl = L["ct_lbl"].replace("CT", "BCT")
-                draw_ct(ax, x_offset+0.25, y_offset-3.8, ct_b_lbl, fs)  
-                
-                # Lower Earth Switch
-                earth_sh(ax, x_offset+0.25, y_offset-4.7, L["earth_lbl2"], fs)
-                # Lower Isolator
-                draw_isolator(ax, x_offset+0.25, y_offset-5.2, L["base_isolatorb"], fs)
-                
-                # Continuous connecting wire
-                ax.plot([x_offset+0.25, x_offset+0.25], [y_offset+0.6, y_offset-5.2], color='red', linewidth=0.5)
-                draw_name(ax, x_offset-0.5, y_offset-2.5, L["symbol_lbl"], fs)
-
+    L = get_labels_15(feeder_num, i)
+    # Define the center of the Tie Breaker as the symmetry reference point
+    cb_center_y = y_offset - 2.5 
+    
+    # 1. TIE BREAKER (Reference Center)
+    draw_breaker(ax, x_offset+0.25, y_offset-2.5, L["breaker_lbl"], fs)
+    
+    # --- TOP HALF (Symmetrical Upwards from CB Center) ---
+    # ACT: +1.3 units from center
+    ct_a_lbl = L["ct_lbl"].replace("CT", "ACT")
+    draw_ct(ax, x_offset+0.25, cb_center_y + 1.3, ct_a_lbl, fs)  
+    
+    # Top Earth Switch: +2.6 units from center
+    earth_sh(ax, x_offset+.25, cb_center_y + 2.6, L["earth_lbl1"], fs)
+    
+    # Top Isolator: +3.1 units from center
+    draw_isolator(ax, x_offset+.25, cb_center_y + 3.1, L["base_isolator"], fs)
+    
+    # --- BOTTOM HALF (Symmetrical Downwards from CB Center) ---
+    # BCT: -1.3 units from center
+    ct_b_lbl = L["ct_lbl"].replace("CT", "BCT")
+    draw_ct(ax, x_offset+0.25, cb_center_y - 1.3, ct_b_lbl, fs)  
+    
+    # Bottom Earth Switch: -2.6 units from center
+    earth_sh(ax, x_offset+0.25, cb_center_y - 2.6, L["earth_lbl2"], fs)
+    
+    # Bottom Isolator: -3.1 units from center
+    draw_isolator(ax, x_offset+0.25, cb_center_y - 3.1, L["base_isolatorb"], fs)
+    
+    # --- CONNECTING WIRE ---
+    # Draw a single continuous line from top isolator to bottom isolator
+    ax.plot([x_offset+0.25, x_offset+0.25], [cb_center_y + 3.1, cb_center_y - 3.1], color='red', linewidth=0.5)
+    draw_name(ax, x_offset-0.5, y_offset-2.5, L["symbol_lbl"], fs)
             def grid_draw_feeder1(ax, x_offset, y_offset, feeder_num, fs, i):
                 L, n = get_labels_15(feeder_num, i), i+1
                 if (n - 1) % 3 == 0:
