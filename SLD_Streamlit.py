@@ -552,42 +552,41 @@ if st.button("Generate AutoCAD DXF", type="primary"):
 
             # --- GEOMETRICALLY SYMMETRIC TIE BAY (EQUI-SPACED FIX) ---
             def middle_common_15(ax, x_offset, y_offset, feeder_num, fs, i):
-                L = get_labels_15(feeder_num, i)
-                # Define absolute CB center reference
-                cb_center_y = y_offset - 2.5 
-                
-                # Draw Center Breaker
-                draw_breaker(ax, x_offset+0.25, cb_center_y, L["breaker_lbl"], fs)
-                
-                # --- TOP HALF (MIRRORED UPWARDS) ---
-                # CT at +1.3 from center
-                ct_a_lbl = L["ct_lbl"].replace("CT", "ACT")
-                draw_ct(ax, x_offset+0.25, cb_center_y + 1.3, ct_a_lbl, fs)  
-                
-                # Earth Switch at +2.4 from center
-                # Sequence: CB -> CT -> Earth Switch -> Isolator
-                earth_sh(ax, x_offset+.25, cb_center_y + 2.4, L["earth_lbl1"], fs)
-                
-                # Isolator at +3.1 from center
-                draw_isolator(ax, x_offset+.25, cb_center_y + 3.1, L["base_isolator"], fs)
-                
-                # --- BOTTOM HALF (EQUI-SPACED MIRROR) ---
-                # CT at -1.3 from center
-                ct_b_lbl = L["ct_lbl"].replace("CT", "BCT")
-                draw_ct(ax, x_offset+0.25, cb_center_y - 1.3, ct_b_lbl, fs)  
-                
-                # Earth Switch at -2.4 from center (MIRRORED POSITION)
-                # Fix: Swapped from previous version to mirror top sequence
-                earth_sh(ax, x_offset+0.25, cb_center_y - 1.9, L["earth_lbl2"], fs)
-                
-                # Isolator at -3.1 from center (MIRRORED POSITION)
-                draw_isolator(ax, x_offset+0.25, cb_center_y - 3.1, L["base_isolatorb"], fs)
-                
-                # --- UNIFORM CONNECTING LINE ---
-                ax.plot([x_offset+0.25, x_offset+0.25], [cb_center_y + 3.1, cb_center_y - 3.1], color='red', linewidth=0.5)
-                draw_name(ax, x_offset-0.5, y_offset-2.5, L["symbol_lbl"], fs)
+            L = get_labels_15(feeder_num, i)
+            # Define absolute CB center reference for symmetry
+            cb_center_y = y_offset - 2.5 
+            
+            # 1. TIE BREAKER (Center Reference)
+            draw_breaker(ax, x_offset+0.25, cb_center_y, L["breaker_lbl"], fs)
+            
+            # --- TOP HALF (Symmetrical Upwards) ---
+            # ACT: 1.25 units from center
+            ct_a_lbl = L["ct_lbl"].replace("CT", "ACT")
+            draw_ct(ax, x_offset+0.25, cb_center_y + 1.25, ct_a_lbl, fs)  
+            
+            # Top Earth Switch: 2.5 units from center
+            earth_sh(ax, x_offset+0.25, cb_center_y + 2.5, L["earth_lbl1"], fs)
+            
+            # Top Isolator: 3.1 units from center
+            draw_isolator(ax, x_offset+0.25, cb_center_y + 3.1, L["base_isolator"], fs)
+            
+            # --- BOTTOM HALF (Symmetrical Downwards) ---
+            # BCT: 1.25 units from center
+            ct_b_lbl = L["ct_lbl"].replace("CT", "BCT")
+            draw_ct(ax, x_offset+0.25, cb_center_y - 1.25, ct_b_lbl, fs)  
+            
+            # Bottom Earth Switch: 2.5 units from center
+            earth_sh(ax, x_offset+0.25, cb_center_y - 2.5, L["earth_lbl2"], fs)
+            
+            # Bottom Isolator: 3.1 units from center
+            draw_isolator(ax, x_offset+0.25, cb_center_y - 3.1, L["base_isolatorb"], fs)
+            
+            # --- UNIFORM CONNECTING LINE ---
+            # Perfectly spans from the top terminal to the bottom terminal
+            ax.plot([x_offset+0.25, x_offset+0.25], [cb_center_y + 3.1, cb_center_y - 3.1], color='red', linewidth=0.5)
+            draw_name(ax, x_offset-0.5, cb_center_y, L["symbol_lbl"], fs)
 
-            def grid_draw_feeder1(ax, x_offset, y_offset, feeder_num, fs, i):
+                def grid_draw_feeder1(ax, x_offset, y_offset, feeder_num, fs, i):
                 L, n = get_labels_15(feeder_num, i), i+1
                 if (n - 1) % 3 == 0:
                     common_15(ax, x_offset, y_offset, feeder_num, fs, i)
