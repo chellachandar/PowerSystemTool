@@ -10,3 +10,6 @@ openpyxl
 docx
 python-docx
 google-generativeai
+anthropic>=0.25.0
+pdfplumber>=0.10.0
+reportlab>=4.1.0
