@@ -1,7 +1,7 @@
 import math
 import streamlit as st
 
-st.set_page_config(page_title="P&C Field Calculator", page_icon="", layout="centered")
+st.set_page_config(page_title="P&C Field Calculator", layout="centered")
 
 # ---------------------------------------------------------------- mobile CSS
 st.markdown("""
