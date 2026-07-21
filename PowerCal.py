@@ -361,7 +361,6 @@ with tab_set:
         st.session_state.fSb = new_sb
         st.rerun()
 
-    note("No accounts, no analytics. Inputs reset on page refresh.")
-
+    
 st.divider()
 st.caption("Indicative results — verify against detailed studies and rated data.")
