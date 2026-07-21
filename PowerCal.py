@@ -8,6 +8,7 @@ st.markdown("""
 <style>
 /* app-like: hide Streamlit chrome (header, footer, menu) */
 #MainMenu, footer, header[data-testid="stHeader"] {display:none;}
+[class*="viewerBadge"], a[href*="streamlit.io"] {display:none !important;}
 /* tight page padding, phone-width column */
 .block-container {padding:0.8rem 0.9rem 3rem; max-width:640px;}
 /* compact headings */
